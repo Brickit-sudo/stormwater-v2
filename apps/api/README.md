@@ -14,7 +14,7 @@ copy .env.example .env
 
 Set `DATABASE_URL` in `.env` for local Postgres:
 
-```powershell
+```text
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 ```
 
@@ -22,10 +22,22 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 
 Alembic is configured under `apps/api/alembic` and reads the same `DATABASE_URL`.
 
+Create the local database if needed:
+
+```powershell
+createdb -U postgres stormwater_v2
+```
+
+If `createdb` is not available:
+
+```powershell
+psql -U postgres -c "CREATE DATABASE stormwater_v2;"
+```
+
 ```powershell
 cd apps\api
-.\.venv\Scripts\alembic heads
-.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\python -m alembic heads
+.\.venv\Scripts\python -m alembic upgrade head
 ```
 
 `alembic upgrade head` requires a reachable Postgres database. Importing the app and model metadata does not.
@@ -34,7 +46,7 @@ cd apps\api
 
 ```powershell
 cd apps\api
-.\.venv\Scripts\uvicorn app.main:app --reload
+.\.venv\Scripts\python -m uvicorn app.main:app --reload
 ```
 
 The API runs at `http://localhost:8000`.
@@ -54,17 +66,26 @@ For local frontend development, create a temporary organization and demo CRM rec
 
 ```powershell
 cd apps\api
-.\.venv\Scripts\python scripts\seed_dev.py
+.\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps/web/.env.local`. This is only a development bridge until auth and organization scoping are added.
+The deterministic seed creates one organization, three clients, five sites, and eight jobs with `legacy_source='seed_dev'`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's `seed_dev` clients, sites, and jobs before reseeding.
+
+Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
+```
+
+This is only a development bridge until auth and organization scoping are added.
 
 ## Tests And Checks
 
 ```powershell
 cd apps\api
 .\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m compileall app tests
+.\.venv\Scripts\python -m compileall app scripts tests
 .\.venv\Scripts\python -m pytest -q
 .\.venv\Scripts\python -c "from app.main import app; print([r.path for r in app.routes])"
 .\.venv\Scripts\python -m alembic heads

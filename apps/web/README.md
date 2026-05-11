@@ -14,19 +14,26 @@ Set `apps/web/.env.local`:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-NEXT_PUBLIC_DEMO_ORG_ID=<organization UUID>
+NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
 ```
 
 `NEXT_PUBLIC_DEMO_ORG_ID` is temporary. Auth and membership-derived organization scoping are deferred, so the CRM uses this value when calling the `/v1` API. If it is missing, the app shows a setup message instead of making API calls.
 Restart `npm run dev` after changing `.env.local`.
 
-To create local demo data, run this from `apps/api` after database migrations:
+To create local demo data, set `apps\api\.env`, run migrations, then run this from `apps\api`:
 
 ```powershell
+.\.venv\Scripts\python -m alembic upgrade head
 .\.venv\Scripts\python scripts\seed_dev.py
 ```
 
-Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`.
+Use `--reset-seed` when you want to remove only existing `legacy_source='seed_dev'` demo CRM rows before reseeding:
+
+```powershell
+.\.venv\Scripts\python scripts\seed_dev.py --reset-seed
+```
+
+Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The seed creates one organization, three clients, five sites, and eight jobs.
 
 ## Run
 
@@ -34,7 +41,7 @@ Start the API:
 
 ```powershell
 cd apps\api
-.\.venv\Scripts\uvicorn app.main:app --reload
+.\.venv\Scripts\python -m uvicorn app.main:app --reload
 ```
 
 Start the web app:

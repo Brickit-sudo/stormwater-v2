@@ -23,6 +23,61 @@ docs/
 
 ## Development
 
+### Local End-To-End CRM
+
+Create the local database:
+
+```powershell
+createdb -U postgres stormwater_v2
+```
+
+If `createdb` is not on your PATH, use `psql`:
+
+```powershell
+psql -U postgres -c "CREATE DATABASE stormwater_v2;"
+```
+
+Configure the API environment:
+
+```powershell
+cd apps\api
+copy .env.example .env
+```
+
+Set `apps\api\.env`:
+
+```text
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
+```
+
+Run migrations and seed deterministic CRM demo data:
+
+```powershell
+.\.venv\Scripts\python -m alembic upgrade head
+.\.venv\Scripts\python scripts\seed_dev.py --reset-seed
+```
+
+Copy the printed organization id into `apps\web\.env.local`:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
+```
+
+Then run the API and web app in separate terminals:
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python -m uvicorn app.main:app --reload
+```
+
+```powershell
+cd apps\web
+npm run dev
+```
+
+Open `http://localhost:3000/crm/clients`.
+
 ### Frontend
 
 ```bash
@@ -44,7 +99,7 @@ Set:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-NEXT_PUBLIC_DEMO_ORG_ID=<organization UUID>
+NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
 ```
 
 `NEXT_PUBLIC_DEMO_ORG_ID` is temporary while auth and membership-derived organization scoping are deferred. The frontend will show a setup message instead of calling the API if this value is missing.
@@ -84,14 +139,14 @@ copy .env.example .env
 Set `DATABASE_URL` in `apps/api/.env`, then run migrations:
 
 ```powershell
-.\.venv\Scripts\alembic heads
-.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\python -m alembic heads
+.\.venv\Scripts\python -m alembic upgrade head
 ```
 
 API checks:
 
 ```powershell
-.\.venv\Scripts\python -m compileall app tests
+.\.venv\Scripts\python -m compileall app scripts tests
 .\.venv\Scripts\python -m pytest -q
 .\.venv\Scripts\python -c "from app.main import app; print([r.path for r in app.routes])"
 ```
@@ -102,10 +157,10 @@ Optional dev seed data:
 
 ```powershell
 cd apps\api
-.\.venv\Scripts\python scripts\seed_dev.py
+.\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The seed script creates one organization, client, site, and job, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`.
+The seed script creates one deterministic organization, three clients, five sites, and eight jobs, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only rows marked `legacy_source='seed_dev'` for the demo organization before reseeding.
 
 Example:
 
