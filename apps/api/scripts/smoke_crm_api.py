@@ -23,6 +23,7 @@ EXPECTED_COUNTS = {
     "clients": 3,
     "sites": 5,
     "jobs": 8,
+    "files": 7,
 }
 
 
@@ -69,10 +70,12 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     clients = _get_json(base_url, "/v1/clients", query)
     sites = _get_json(base_url, "/v1/sites", query)
     jobs = _get_json(base_url, "/v1/jobs", query)
+    files = _get_json(base_url, "/v1/files", query)
 
     _require_count("clients", clients, EXPECTED_COUNTS["clients"])
     _require_count("sites", sites, EXPECTED_COUNTS["sites"])
     _require_count("jobs", jobs, EXPECTED_COUNTS["jobs"])
+    _require_count("files", files, EXPECTED_COUNTS["files"])
 
     first_client = clients["items"][0]
     first_site = sites["items"][0]
@@ -80,13 +83,34 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     client_jobs = _get_json(base_url, f"/v1/clients/{first_client['id']}/jobs", query)
     site_jobs = _get_json(base_url, f"/v1/sites/{first_site['id']}/jobs", query)
 
+    spring_inspection_job = next(
+        (job for job in jobs["items"] if job.get("job_code") == "BAY-2026-INS"),
+        None,
+    )
+    if spring_inspection_job is not None:
+        job_files_query = {"organization_id": organization_id, "job_id": spring_inspection_job["id"]}
+        job_files = _get_json(base_url, "/v1/files", job_files_query)
+        if job_files.get("total") != 1:
+            raise SmokeFailure(
+                f"Expected 1 seeded file for job {spring_inspection_job['name']}, "
+                f"got {job_files.get('total')}.",
+            )
+    else:
+        job_files = {"total": 0, "items": []}
+
     print(f"health: {health['status']} ({health['service']})")
     print(f"clients: {clients['total']} - {_sample_names(clients)}")
     print(f"sites: {sites['total']} - {_sample_names(sites)}")
     print(f"jobs: {jobs['total']} - {_sample_names(jobs)}")
+    print(f"files: {files['total']}")
     print(f"linked client sites: {client_sites['total']} for {first_client['name']}")
     print(f"linked client jobs: {client_jobs['total']} for {first_client['name']}")
     print(f"linked site jobs: {site_jobs['total']} for {first_site['name']}")
+    if spring_inspection_job is not None:
+        print(
+            f"job-scoped files: {job_files['total']} for "
+            f"{spring_inspection_job['name']}",
+        )
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

@@ -1,6 +1,10 @@
 import type {
   Client,
   ClientFormInput,
+  EvidenceFile,
+  EvidenceFileCreateInput,
+  EvidenceFileListOptions,
+  EvidenceFileUpdateInput,
   Job,
   JobFormInput,
   ListOptions,
@@ -259,6 +263,53 @@ export function updateJob(
 
 export function archiveJob(jobId: UUID, organizationId: UUID): Promise<Job> {
   return apiRequest<Job>(`/v1/jobs/${jobId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listFiles(
+  options: EvidenceFileListOptions,
+): Promise<ListResponse<EvidenceFile>> {
+  return apiRequest<ListResponse<EvidenceFile>>("/v1/files", {
+    query: {
+      organization_id: options.organizationId,
+      client_id: options.clientId,
+      site_id: options.siteId,
+      job_id: options.jobId,
+      limit: options.limit,
+      offset: options.offset,
+    },
+  });
+}
+
+export function createFileLink(
+  organizationId: UUID,
+  input: EvidenceFileCreateInput,
+): Promise<EvidenceFile> {
+  return apiRequest<EvidenceFile>("/v1/files", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateFileLink(
+  fileId: UUID,
+  organizationId: UUID,
+  input: EvidenceFileUpdateInput,
+): Promise<EvidenceFile> {
+  return apiRequest<EvidenceFile>(`/v1/files/${fileId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveFileLink(
+  fileId: UUID,
+  organizationId: UUID,
+): Promise<EvidenceFile> {
+  return apiRequest<EvidenceFile>(`/v1/files/${fileId}`, {
     method: "DELETE",
     query: { organization_id: organizationId },
   });

@@ -9,4 +9,5 @@ def test_smoke_script_defaults_match_seed_constants() -> None:
         "clients": 3,
         "sites": 5,
         "jobs": 8,
+        "files": 7,
     }

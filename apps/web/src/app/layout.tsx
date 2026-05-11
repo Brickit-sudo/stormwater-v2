@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Stormwater V2",
-  description: "Stormwater operating system V2 foundation.",
+  title: "Sterling Stormwater V2",
+  description:
+    "Sterling Stormwater field service command center - clients, sites, and jobs.",
 };
 
 export default function RootLayout({
@@ -27,7 +28,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col bg-bg text-text">
+        {children}
+      </body>
     </html>
   );
 }

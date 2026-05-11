@@ -17,7 +17,7 @@ if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
 from app.db import get_session_factory  # noqa: E402
-from app.models import Client, Job, Organization, Site  # noqa: E402
+from app.models import Client, EvidenceFile, Job, Organization, Site  # noqa: E402
 
 
 LEGACY_SOURCE = "seed_dev"
@@ -303,12 +303,115 @@ SEED_JOBS: list[dict[str, Any]] = [
 ]
 
 
+SEED_EVIDENCE_FILES: list[dict[str, Any]] = [
+    {
+        "legacy_id": "evidence_file:ptpm-master-service-agreement",
+        "id": _seed_uuid("evidence_file:ptpm-master-service-agreement"),
+        "scope": "client",
+        "client_legacy_id": "client:pine-tree-property-management",
+        "site_legacy_id": None,
+        "job_legacy_id": None,
+        "source": "drive_link",
+        "file_name": "Master Service Agreement (2026).pdf",
+        "mime_type": "application/pdf",
+        "public_url": "https://drive.google.com/file/d/seed-msa-ptpm-2026/view",
+        "caption": "Signed master service agreement for 2026.",
+        "sort_order": 0,
+    },
+    {
+        "legacy_id": "evidence_file:kmw-certificate-of-insurance",
+        "id": _seed_uuid("evidence_file:kmw-certificate-of-insurance"),
+        "scope": "client",
+        "client_legacy_id": "client:kennebec-millworks",
+        "site_legacy_id": None,
+        "job_legacy_id": None,
+        "source": "drive_link",
+        "file_name": "Certificate of Insurance.pdf",
+        "mime_type": "application/pdf",
+        "public_url": "https://drive.google.com/file/d/seed-coi-kmw/view",
+        "caption": None,
+        "sort_order": 0,
+    },
+    {
+        "legacy_id": "evidence_file:bayside-site-plan-v3",
+        "id": _seed_uuid("evidence_file:bayside-site-plan-v3"),
+        "scope": "site",
+        "client_legacy_id": None,
+        "site_legacy_id": "site:bayside-retail-plaza",
+        "job_legacy_id": None,
+        "source": "drive_link",
+        "file_name": "Site Plan v3.pdf",
+        "mime_type": "application/pdf",
+        "public_url": "https://drive.google.com/file/d/seed-bayside-site-plan-v3/view",
+        "caption": "Latest stamped civil site plan for the retail plaza.",
+        "sort_order": 0,
+    },
+    {
+        "legacy_id": "evidence_file:augusta-ms4-permit-notice",
+        "id": _seed_uuid("evidence_file:augusta-ms4-permit-notice"),
+        "scope": "site",
+        "client_legacy_id": None,
+        "site_legacy_id": "site:augusta-logistics-yard",
+        "job_legacy_id": None,
+        "source": "other",
+        "file_name": "MS4 Permit Notice.pdf",
+        "mime_type": "application/pdf",
+        "public_url": "https://drive.google.com/file/d/seed-augusta-ms4-permit/view",
+        "caption": None,
+        "sort_order": 0,
+    },
+    {
+        "legacy_id": "evidence_file:bayside-spring-inspection-photo-set",
+        "id": _seed_uuid("evidence_file:bayside-spring-inspection-photo-set"),
+        "scope": "job",
+        "client_legacy_id": None,
+        "site_legacy_id": None,
+        "job_legacy_id": "job:bayside-2026-spring-inspection",
+        "source": "drive_link",
+        "file_name": "Inspection Photo Set Placeholder",
+        "mime_type": None,
+        "public_url": "https://drive.google.com/drive/folders/seed-bayside-2026-photos",
+        "caption": "Photo collection placeholder until the photo flow lands.",
+        "sort_order": 0,
+    },
+    {
+        "legacy_id": "evidence_file:augusta-winter-sediment-cleanout-verification",
+        "id": _seed_uuid("evidence_file:augusta-winter-sediment-cleanout-verification"),
+        "scope": "job",
+        "client_legacy_id": None,
+        "site_legacy_id": None,
+        "job_legacy_id": "job:augusta-winter-sediment-cleanout",
+        "source": "drive_link",
+        "file_name": "Maintenance Verification Notes.pdf",
+        "mime_type": "application/pdf",
+        "public_url": "https://drive.google.com/file/d/seed-augusta-maintenance-verification/view",
+        "caption": "Crew verification of inlet sumps after winter sediment removal.",
+        "sort_order": 0,
+    },
+    {
+        "legacy_id": "evidence_file:augusta-swppp-pending-field-notes",
+        "id": _seed_uuid("evidence_file:augusta-swppp-pending-field-notes"),
+        "scope": "job",
+        "client_legacy_id": None,
+        "site_legacy_id": None,
+        "job_legacy_id": "job:augusta-yard-swppp-review",
+        "source": "other",
+        "file_name": "Pending Field Notes",
+        "mime_type": None,
+        "public_url": None,
+        "caption": "Draft placeholder; no URL yet - exercises the missing-URL render path.",
+        "sort_order": 0,
+    },
+]
+
+
 def seed_counts() -> dict[str, int]:
     return {
         "organizations": 1,
         "clients": len(SEED_CLIENTS),
         "sites": len(SEED_SITES),
         "jobs": len(SEED_JOBS),
+        "evidence_files": len(SEED_EVIDENCE_FILES),
     }
 
 
@@ -327,9 +430,9 @@ def _ensure_organization(session: Session) -> Organization:
 
 def _find_seed_row(
     session: Session,
-    model: type[Client] | type[Site] | type[Job],
+    model: type[Client] | type[Site] | type[Job] | type[EvidenceFile],
     legacy_id: str,
-) -> Client | Site | Job | None:
+) -> Client | Site | Job | EvidenceFile | None:
     return session.scalar(
         select(model).where(
             model.organization_id == DEMO_ORGANIZATION_ID,
@@ -341,10 +444,10 @@ def _find_seed_row(
 
 def _upsert_seed_row(
     session: Session,
-    model: type[Client] | type[Site] | type[Job],
+    model: type[Client] | type[Site] | type[Job] | type[EvidenceFile],
     record: dict[str, Any],
     values: dict[str, Any],
-) -> Client | Site | Job:
+) -> Client | Site | Job | EvidenceFile:
     legacy_id = record["legacy_id"]
     instance = _find_seed_row(session, model, legacy_id)
     if instance is None:
@@ -406,7 +509,7 @@ def _job_values(
 
 def reset_seed(session: Session) -> dict[str, int]:
     deleted: dict[str, int] = {}
-    for model in (Job, Site, Client):
+    for model in (EvidenceFile, Job, Site, Client):
         result = session.execute(
             delete(model).where(
                 model.organization_id == DEMO_ORGANIZATION_ID,
@@ -416,6 +519,36 @@ def reset_seed(session: Session) -> dict[str, int]:
         deleted[model.__tablename__] = result.rowcount or 0
     session.flush()
     return deleted
+
+
+def _evidence_file_values(
+    record: dict[str, Any],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+) -> dict[str, Any]:
+    values = {
+        key: value
+        for key, value in record.items()
+        if key
+        not in {
+            "id",
+            "legacy_id",
+            "scope",
+            "client_legacy_id",
+            "site_legacy_id",
+            "job_legacy_id",
+        }
+    }
+    client_legacy_id = record.get("client_legacy_id")
+    site_legacy_id = record.get("site_legacy_id")
+    job_legacy_id = record.get("job_legacy_id")
+    values["client_id"] = (
+        client_by_legacy_id[client_legacy_id].id if client_legacy_id else None
+    )
+    values["site_id"] = site_by_legacy_id[site_legacy_id].id if site_legacy_id else None
+    values["job_id"] = job_by_legacy_id[job_legacy_id].id if job_legacy_id else None
+    return values
 
 
 def seed(session: Session) -> Organization:
@@ -431,12 +564,27 @@ def seed(session: Session) -> Organization:
         site = _upsert_seed_row(session, Site, record, _site_values(record, client_by_legacy_id))
         site_by_legacy_id[record["legacy_id"]] = site
 
+    job_by_legacy_id: dict[str, Job] = {}
     for record in SEED_JOBS:
-        _upsert_seed_row(
+        job = _upsert_seed_row(
             session,
             Job,
             record,
             _job_values(record, client_by_legacy_id, site_by_legacy_id),
+        )
+        job_by_legacy_id[record["legacy_id"]] = job
+
+    for record in SEED_EVIDENCE_FILES:
+        _upsert_seed_row(
+            session,
+            EvidenceFile,
+            record,
+            _evidence_file_values(
+                record,
+                client_by_legacy_id,
+                site_by_legacy_id,
+                job_by_legacy_id,
+            ),
         )
 
     session.commit()
@@ -464,7 +612,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             session.commit()
             print(
                 "Deleted seed_dev rows: "
-                f"{deleted['clients']} clients, {deleted['sites']} sites, {deleted['jobs']} jobs.",
+                f"{deleted['clients']} clients, {deleted['sites']} sites, "
+                f"{deleted['jobs']} jobs, {deleted['evidence_files']} files.",
             )
 
         organization = seed(session)
@@ -472,7 +621,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(
             "Seeded demo CRM data: "
             f"{counts['organizations']} organization, {counts['clients']} clients, "
-            f"{counts['sites']} sites, {counts['jobs']} jobs.",
+            f"{counts['sites']} sites, {counts['jobs']} jobs, "
+            f"{counts['evidence_files']} files.",
         )
         print(f"organization_id={organization.id}")
         print(f"NEXT_PUBLIC_DEMO_ORG_ID={organization.id}")

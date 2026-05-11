@@ -75,7 +75,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The deterministic seed creates one organization, three clients, five sites, and eight jobs with `legacy_source='seed_dev'`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's `seed_dev` clients, sites, and jobs before reseeding.
+The deterministic seed creates one organization, three clients, five sites, eight jobs, and seven `evidence_files` metadata rows, all tagged with `legacy_source='seed_dev'`. The seven file rows include client-level, site-level, and job-level examples to exercise the Drive/File panel on each CRM detail view. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's `seed_dev` rows (clients, sites, jobs, and evidence files) before reseeding.
 
 Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 
@@ -126,6 +126,21 @@ The route tests use an in-memory SQLite engine for only the CRM tables under tes
 - `GET /v1/jobs/{job_id}`
 - `PATCH /v1/jobs/{job_id}`
 - `DELETE /v1/jobs/{job_id}`
+- `GET /v1/files`
+- `POST /v1/files`
+- `GET /v1/files/{file_id}`
+- `PATCH /v1/files/{file_id}`
+- `DELETE /v1/files/{file_id}`
+
+The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` table. This phase does not implement binary upload, Google Drive OAuth, folder creation, folder scanning, or sync. `DELETE` is a soft archive (`archived_at`) - it never touches the actual file in Google Drive.
+
+Filter the list with `client_id`, `site_id`, or `job_id` query params:
+
+```
+GET /v1/files?organization_id=<uuid>&job_id=<job-uuid>
+```
+
+The `source` field is currently treated as an enum-like string. Allowed values: `drive_link` (default), `upload_placeholder`, `report_export`, `photo`, `other`.
 
 ## Basic Examples
 

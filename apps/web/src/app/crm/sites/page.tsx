@@ -5,9 +5,11 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import AppShell from "@/components/AppShell";
 import DetailPanel, { DetailField } from "@/components/crm/DetailPanel";
+import DriveFilePanel from "@/components/crm/DriveFilePanel";
 import EmptyState from "@/components/crm/EmptyState";
 import EntityTable, { type EntityColumn } from "@/components/crm/EntityTable";
 import StatusBadge from "@/components/crm/StatusBadge";
+import SectionHeader from "@/components/ui/SectionHeader";
 import {
   archiveSite,
   createSite,
@@ -18,6 +20,11 @@ import {
   updateSite,
 } from "@/lib/api";
 import type { Client, Job, Site, SiteFormInput } from "@/lib/types";
+import {
+  dangerButtonClass,
+  primaryButtonClass as buttonClass,
+  secondaryButtonClass,
+} from "@/lib/ui";
 
 type FormMode = "view" | "create" | "edit";
 
@@ -32,13 +39,6 @@ type SiteFormState = {
   notes: string;
   drive_folder_url: string;
 };
-
-const buttonClass =
-  "inline-flex h-9 items-center justify-center rounded-md bg-[#1a7f37] px-3 text-sm font-semibold text-white transition hover:bg-[#176d31] disabled:cursor-not-allowed disabled:bg-[#a9b7a9]";
-const secondaryButtonClass =
-  "inline-flex h-9 items-center justify-center rounded-md border border-[#cfd8cc] bg-white px-3 text-sm font-semibold text-[#263126] transition hover:bg-[#f6f8f4] disabled:cursor-not-allowed disabled:text-[#98a398]";
-const dangerButtonClass =
-  "inline-flex h-9 items-center justify-center rounded-md border border-[#e2bcbc] bg-white px-3 text-sm font-semibold text-[#963333] transition hover:bg-[#fff6f6] disabled:cursor-not-allowed disabled:text-[#b99b9b]";
 
 const siteStatusOptions = ["active", "inactive", "on_hold"];
 
@@ -125,7 +125,7 @@ function payloadFromForm(form: SiteFormState): SiteFormInput {
 function SetupMessage() {
   return (
     <AppShell>
-      <div className="rounded-md border border-[#e4d28d] bg-[#fff9e8] p-5 text-sm text-[#604a13]">
+      <div className="rounded-lg border border-[color:var(--yellow)]/40 bg-[color:var(--yellow-soft)] p-5 text-sm text-[color:var(--yellow)]">
         Set NEXT_PUBLIC_DEMO_ORG_ID in apps/web/.env.local to use the CRM.
       </div>
     </AppShell>
@@ -361,26 +361,24 @@ export default function SitesPage() {
 
   return (
     <AppShell>
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-[#172017]">Sites</h1>
-            <p className="mt-1 text-sm text-[#667466]">
-              Keep locations tied to clients before work is scheduled.
-            </p>
-          </div>
-          <button
-            type="button"
-            className={buttonClass}
-            onClick={startCreate}
-            disabled={clients.length === 0}
-          >
-            New Site
-          </button>
-        </div>
+      <div className="space-y-6">
+        <SectionHeader
+          title="Sites"
+          description="Keep locations tied to clients before work is scheduled."
+          actions={
+            <button
+              type="button"
+              className={buttonClass}
+              onClick={startCreate}
+              disabled={clients.length === 0}
+            >
+              New Site
+            </button>
+          }
+        />
 
         {error ? (
-          <div className="rounded-md border border-[#e7b9b9] bg-[#fff6f6] px-4 py-3 text-sm text-[#8a2f2f]">
+          <div className="rounded-md border border-[color:var(--red)]/40 bg-[color:var(--red-soft)] px-4 py-3 text-sm text-[color:var(--red)]">
             {error}
           </div>
         ) : null}
@@ -389,24 +387,24 @@ export default function SitesPage() {
           <section className="min-w-0 space-y-3">
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px]">
               <label className="block">
-                <span className="text-sm font-medium text-[#3d4a3d]">
+                <span className="text-sm font-medium text-text-secondary">
                   Search sites
                 </span>
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search by name, code, address, city, or state"
-                  className="mt-2 h-10 w-full rounded-md border border-[#cfd8cc] bg-white px-3 text-sm outline-none transition placeholder:text-[#9aa59a] focus:border-[#1a7f37] focus:ring-2 focus:ring-[#d8eedc]"
+                  className="form-input mt-2"
                 />
               </label>
               <label className="block">
-                <span className="text-sm font-medium text-[#3d4a3d]">
+                <span className="text-sm font-medium text-text-secondary">
                   Client filter
                 </span>
                 <select
                   value={clientFilter}
                   onChange={(event) => setClientFilter(event.target.value)}
-                  className="mt-2 h-10 w-full rounded-md border border-[#cfd8cc] bg-white px-3 text-sm outline-none transition focus:border-[#1a7f37] focus:ring-2 focus:ring-[#d8eedc]"
+                  className="form-input mt-2"
                 >
                   <option value="">All clients</option>
                   {clients.map((client) => (
@@ -472,15 +470,15 @@ export default function SitesPage() {
                 </dl>
 
                 <section>
-                  <h3 className="text-sm font-semibold text-[#172017]">
+                  <h3 className="text-sm font-semibold text-text">
                     Jobs for selected site
                   </h3>
                   {linkedLoading ? (
-                    <p className="mt-2 text-sm text-[#667466]">Loading linked jobs...</p>
+                    <p className="mt-2 text-sm text-text-muted">Loading linked jobs...</p>
                   ) : linkedJobs.length > 0 ? (
-                    <div className="mt-3 divide-y divide-[#edf0eb] rounded-md border border-[#e3e8e0]">
+                    <div className="mt-3 divide-y divide-border-soft rounded-lg border border-border-soft bg-panel-2">
                       {linkedJobs.map((job) => (
-                        <div key={job.id} className="px-3 py-2 text-sm text-[#263126]">
+                        <div key={job.id} className="px-3 py-2 text-sm text-text-secondary">
                           {[job.name, job.service_type, job.status]
                             .filter(Boolean)
                             .join(" - ")}
@@ -488,11 +486,18 @@ export default function SitesPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-2 text-sm text-[#667466]">
+                    <p className="mt-2 text-sm text-text-muted">
                       No linked jobs yet.
                     </p>
                   )}
                 </section>
+
+                <DriveFilePanel
+                  organizationId={organizationId}
+                  siteId={selectedSite.id}
+                  driveFolderUrl={selectedSite.drive_folder_url}
+                  selectedRecordLabel={selectedSite.name}
+                />
               </div>
             ) : (
               <EmptyState
@@ -650,7 +655,7 @@ function FormField({
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-[#3d4a3d]">{label}</span>
+      <span className="text-sm font-medium text-text-secondary">{label}</span>
       <div className="mt-2">{children}</div>
     </label>
   );

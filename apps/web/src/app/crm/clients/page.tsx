@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import AppShell from "@/components/AppShell";
 import DetailPanel, { DetailField } from "@/components/crm/DetailPanel";
+import DriveFilePanel from "@/components/crm/DriveFilePanel";
 import EmptyState from "@/components/crm/EmptyState";
 import EntityTable, { type EntityColumn } from "@/components/crm/EntityTable";
 import StatusBadge from "@/components/crm/StatusBadge";
+import SectionHeader from "@/components/ui/SectionHeader";
 import {
   archiveClient,
   createClient,
@@ -17,6 +19,11 @@ import {
   updateClient,
 } from "@/lib/api";
 import type { Client, ClientFormInput, Job, Site } from "@/lib/types";
+import {
+  dangerButtonClass,
+  primaryButtonClass as buttonClass,
+  secondaryButtonClass,
+} from "@/lib/ui";
 
 type FormMode = "view" | "create" | "edit";
 
@@ -41,13 +48,6 @@ const emptyForm: ClientFormState = {
   notes: "",
   drive_folder_url: "",
 };
-
-const buttonClass =
-  "inline-flex h-9 items-center justify-center rounded-md bg-[#1a7f37] px-3 text-sm font-semibold text-white transition hover:bg-[#176d31] disabled:cursor-not-allowed disabled:bg-[#a9b7a9]";
-const secondaryButtonClass =
-  "inline-flex h-9 items-center justify-center rounded-md border border-[#cfd8cc] bg-white px-3 text-sm font-semibold text-[#263126] transition hover:bg-[#f6f8f4] disabled:cursor-not-allowed disabled:text-[#98a398]";
-const dangerButtonClass =
-  "inline-flex h-9 items-center justify-center rounded-md border border-[#e2bcbc] bg-white px-3 text-sm font-semibold text-[#963333] transition hover:bg-[#fff6f6] disabled:cursor-not-allowed disabled:text-[#b99b9b]";
 
 const clientStatusOptions = ["active", "inactive", "prospect"];
 
@@ -118,7 +118,7 @@ function payloadFromForm(form: ClientFormState): ClientFormInput {
 function SetupMessage() {
   return (
     <AppShell>
-      <div className="rounded-md border border-[#e4d28d] bg-[#fff9e8] p-5 text-sm text-[#604a13]">
+      <div className="rounded-lg border border-[color:var(--yellow)]/40 bg-[color:var(--yellow-soft)] p-5 text-sm text-[color:var(--yellow)]">
         Set NEXT_PUBLIC_DEMO_ORG_ID in apps/web/.env.local to use the CRM.
       </div>
     </AppShell>
@@ -136,17 +136,17 @@ function LinkedList({
 }) {
   return (
     <section>
-      <h3 className="text-sm font-semibold text-[#172017]">{title}</h3>
+      <h3 className="text-sm font-semibold text-text">{title}</h3>
       {items.length > 0 ? (
-        <div className="mt-3 divide-y divide-[#edf0eb] rounded-md border border-[#e3e8e0]">
+        <div className="mt-3 divide-y divide-border-soft rounded-lg border border-border-soft bg-panel-2">
           {items.map((item) => (
-            <div key={item.id} className="px-3 py-2 text-sm text-[#263126]">
+            <div key={item.id} className="px-3 py-2 text-sm text-text-secondary">
               {getLabel(item)}
             </div>
           ))}
         </div>
       ) : (
-        <p className="mt-2 text-sm text-[#667466]">No linked records yet.</p>
+        <p className="mt-2 text-sm text-text-muted">No linked records yet.</p>
       )}
     </section>
   );
@@ -350,21 +350,19 @@ export default function ClientsPage() {
 
   return (
     <AppShell>
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-[#172017]">Clients</h1>
-            <p className="mt-1 text-sm text-[#667466]">
-              Manage accounts first, then work into their sites and jobs.
-            </p>
-          </div>
-          <button type="button" className={buttonClass} onClick={startCreate}>
-            New Client
-          </button>
-        </div>
+      <div className="space-y-6">
+        <SectionHeader
+          title="Clients"
+          description="Manage accounts first, then work into their sites and jobs."
+          actions={
+            <button type="button" className={buttonClass} onClick={startCreate}>
+              New Client
+            </button>
+          }
+        />
 
         {error ? (
-          <div className="rounded-md border border-[#e7b9b9] bg-[#fff6f6] px-4 py-3 text-sm text-[#8a2f2f]">
+          <div className="rounded-md border border-[color:var(--red)]/40 bg-[color:var(--red-soft)] px-4 py-3 text-sm text-[color:var(--red)]">
             {error}
           </div>
         ) : null}
@@ -372,14 +370,14 @@ export default function ClientsPage() {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <section className="min-w-0 space-y-3">
             <label className="block">
-              <span className="text-sm font-medium text-[#3d4a3d]">
+              <span className="text-sm font-medium text-text-secondary">
                 Search clients
               </span>
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by name, code, contact, or email"
-                className="mt-2 h-10 w-full rounded-md border border-[#cfd8cc] bg-white px-3 text-sm outline-none transition placeholder:text-[#9aa59a] focus:border-[#1a7f37] focus:ring-2 focus:ring-[#d8eedc]"
+                className="form-input mt-2"
               />
             </label>
 
@@ -438,7 +436,7 @@ export default function ClientsPage() {
                 </dl>
 
                 {linkedLoading ? (
-                  <p className="text-sm text-[#667466]">Loading linked records...</p>
+                  <p className="text-sm text-text-muted">Loading linked records...</p>
                 ) : (
                   <div className="space-y-5">
                     <LinkedList
@@ -465,6 +463,13 @@ export default function ClientsPage() {
                     />
                   </div>
                 )}
+
+                <DriveFilePanel
+                  organizationId={organizationId}
+                  clientId={selectedClient.id}
+                  driveFolderUrl={selectedClient.drive_folder_url}
+                  selectedRecordLabel={selectedClient.name}
+                />
               </div>
             ) : (
               <EmptyState
@@ -606,7 +611,7 @@ function FormField({
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-[#3d4a3d]">{label}</span>
+      <span className="text-sm font-medium text-text-secondary">{label}</span>
       <div className="mt-2">{children}</div>
     </label>
   );

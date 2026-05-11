@@ -114,3 +114,66 @@ export type ListOptions = {
   limit?: number;
   offset?: number;
 };
+
+export type EvidenceFileSource =
+  | "drive_link"
+  | "upload_placeholder"
+  | "report_export"
+  | "photo"
+  | "other";
+
+export type EvidenceFile = {
+  id: UUID;
+  organization_id: UUID;
+  client_id: UUID | null;
+  site_id: UUID | null;
+  job_id: UUID | null;
+  observation_id: UUID | null;
+  system_id: UUID | null;
+  source: string | null;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  drive_file_id: string | null;
+  drive_folder_id: string | null;
+  public_url: string | null;
+  sort_order: number;
+  caption: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type EvidenceFileCreateInput = {
+  file_name: string;
+  source?: EvidenceFileSource | string | null;
+  public_url?: string | null;
+  drive_file_id?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  caption?: string | null;
+  sort_order?: number | null;
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+};
+
+export type EvidenceFileUpdateInput = {
+  file_name?: string;
+  source?: EvidenceFileSource | string | null;
+  public_url?: string | null;
+  drive_file_id?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  caption?: string | null;
+  sort_order?: number | null;
+};
+
+export type EvidenceFileListOptions = {
+  organizationId: UUID;
+  clientId?: UUID;
+  siteId?: UUID;
+  jobId?: UUID;
+  limit?: number;
+  offset?: number;
+};

@@ -1,28 +1,102 @@
 @import "tailwindcss";
 
+/*
+ * Sterling Stormwater V2 - dark CRM design system.
+ * Source of truth for theme tokens. Tailwind v4 reads the @theme block below
+ * and emits utilities like bg-panel, text-text-muted, border-border, etc.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --bg: #050b08;
+  --bg-elevated: #08130f;
+  --panel: #0b1b22;
+  --panel-2: #0d2028;
+  --panel-soft: #102a25;
+  --sidebar: #060f0d;
+
+  /* Borders */
+  --border: #18313a;
+  --border-soft: #10242b;
+  --border-strong: #1f4554;
+
+  /* Text */
+  --text: #f4f7f2;
+  --text-secondary: #b6c4bf;
+  --text-muted: #6f8583;
+  --text-faint: #4f6766;
+
+  /* Brand + status */
+  --green: #45e04f;
+  --green-strong: #32d947;
+  --green-soft: rgba(69, 224, 79, 0.14);
+  --green-glow: rgba(69, 224, 79, 0.35);
+  --yellow: #f5d328;
+  --yellow-soft: rgba(245, 211, 40, 0.14);
+  --red: #f04f68;
+  --red-soft: rgba(240, 79, 104, 0.14);
+  --blue: #6aa3ff;
+  --blue-soft: rgba(106, 163, 255, 0.14);
+
+  /* Focus / shadow */
+  --focus-ring: rgba(69, 224, 79, 0.45);
+  --shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.02) inset,
+    0 12px 32px -20px rgba(0, 0, 0, 0.7);
+
+  /* Legacy aliases (kept so the form-input/textarea classes keep working) */
+  --background: var(--bg);
+  --foreground: var(--text);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-panel-soft: var(--panel-soft);
+  --color-sidebar: var(--sidebar);
+
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-border-strong: var(--border-strong);
+
+  --color-text: var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+
+  --color-green: var(--green);
+  --color-green-strong: var(--green-strong);
+  --color-green-soft: var(--green-soft);
+  --color-yellow: var(--yellow);
+  --color-yellow-soft: var(--yellow-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
+
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #ffffff;
-    --foreground: #171717;
-  }
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(900px 600px at 8% -10%, rgba(69, 224, 79, 0.06), transparent 60%),
+    radial-gradient(1100px 700px at 110% -20%, rgba(106, 163, 255, 0.05), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
 }
 
 button,
@@ -30,12 +104,70 @@ input,
 select,
 textarea {
   font: inherit;
+  color: inherit;
 }
 
+/* Inputs ------------------------------------------------------------- */
+
 .form-input {
-  @apply h-10 w-full rounded-md border border-[#cfd8cc] bg-white px-3 text-sm text-[#263126] outline-none transition placeholder:text-[#9aa59a] focus:border-[#1a7f37] focus:ring-2 focus:ring-[#d8eedc];
+  @apply h-10 w-full rounded-md border border-border bg-panel-2 px-3 text-sm text-text outline-none transition placeholder:text-text-muted disabled:cursor-not-allowed disabled:border-border-soft disabled:bg-panel disabled:text-text-muted;
+}
+
+.form-input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .form-textarea {
-  @apply w-full rounded-md border border-[#cfd8cc] bg-white px-3 py-2 text-sm text-[#263126] outline-none transition placeholder:text-[#9aa59a] focus:border-[#1a7f37] focus:ring-2 focus:ring-[#d8eedc];
+  @apply w-full rounded-md border border-border bg-panel-2 px-3 py-2 text-sm text-text outline-none transition placeholder:text-text-muted disabled:cursor-not-allowed disabled:border-border-soft disabled:bg-panel disabled:text-text-muted;
+}
+
+.form-textarea:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+select.form-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236f8583' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 12px 8px;
+  padding-right: 2rem;
+}
+
+select.form-input option {
+  background-color: var(--panel-2);
+  color: var(--text);
+}
+
+input[type="date"].form-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.65;
+}
+
+/* Scrollbar tweak for dark panels (WebKit) ---------------------------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Selection */
+::selection {
+  background: var(--green-soft);
+  color: var(--text);
 }

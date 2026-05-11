@@ -40,7 +40,7 @@ Use `--reset-seed` when you want to remove only existing `legacy_source='seed_de
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, and eight jobs.
+Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, eight jobs, and seven `evidence_files` metadata rows that drive the Drive/File panels.
 
 ## Run
 
@@ -70,4 +70,14 @@ Open:
 - `/crm/sites` lists, creates, edits, archives, filters by client, and shows linked jobs.
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.
 
-Reports, photos, Drive integration, auth, and offline/local-first sync are intentionally deferred.
+## Drive/File Panel
+
+Each CRM detail view (Client, Site, Job) renders a Drive/File panel scoped to the selected record. It supports:
+
+- An **Open Drive Folder** link when the selected record (or, for jobs, the parent site) has a `drive_folder_url` set; otherwise a `No Drive folder linked yet.` empty state.
+- A list of linked file metadata rows (`evidence_files`) filtered to the selected entity.
+- **Add File Link** - a metadata-only form that creates an `evidence_files` row. Required: file name. Optional: file URL, source (Drive link / Other), MIME type, caption.
+- **Archive** - soft-deletes the link via `archived_at`. **It does not touch the actual file in Google Drive.**
+- **Refresh** - re-fetches the list.
+
+This phase is metadata-only. There is no binary upload, no Google Drive OAuth, no folder creation, no folder scanning, no sync, no report or photosheet generation. Those are deferred and intentionally not exposed as disabled placeholder buttons.
