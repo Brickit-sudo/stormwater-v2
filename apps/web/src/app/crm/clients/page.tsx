@@ -49,6 +49,8 @@ const secondaryButtonClass =
 const dangerButtonClass =
   "inline-flex h-9 items-center justify-center rounded-md border border-[#e2bcbc] bg-white px-3 text-sm font-semibold text-[#963333] transition hover:bg-[#fff6f6] disabled:cursor-not-allowed disabled:text-[#b99b9b]";
 
+const clientStatusOptions = ["active", "inactive", "prospect"];
+
 const columns: EntityColumn<Client>[] = [
   {
     key: "name",
@@ -517,8 +519,11 @@ function ClientForm({
           onChange={(event) => update("status", event.target.value)}
           className="form-input"
         >
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
+          {clientStatusOptions.map((status) => (
+            <option key={status} value={status}>
+              {status.replaceAll("_", " ")}
+            </option>
+          ))}
         </select>
       </FormField>
 

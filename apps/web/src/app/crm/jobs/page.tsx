@@ -44,6 +44,7 @@ const jobStatusOptions = [
   "draft",
   "scheduled",
   "in_progress",
+  "in_review",
   "completed",
   "cancelled",
 ];

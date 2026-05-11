@@ -25,16 +25,16 @@ docs/
 
 ### Local End-To-End CRM
 
-Create the local database:
+Start the local Postgres container if it already exists:
 
 ```powershell
-createdb -U postgres stormwater_v2
+docker start stormwater-v2-postgres
 ```
 
-If `createdb` is not on your PATH, use `psql`:
+Or create it:
 
 ```powershell
-psql -U postgres -c "CREATE DATABASE stormwater_v2;"
+docker run --name stormwater-v2-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=stormwater_v2 -p 5432:5432 -d postgres:16
 ```
 
 Configure the API environment:
@@ -57,6 +57,12 @@ Run migrations and seed deterministic CRM demo data:
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
+The seed prints the demo organization id. For the current deterministic seed it is:
+
+```text
+850c47b8-6d32-58a0-8605-955527cadbf3
+```
+
 Copy the printed organization id into `apps\web\.env.local`:
 
 ```text
@@ -76,7 +82,18 @@ cd apps\web
 npm run dev
 ```
 
-Open `http://localhost:3000/crm/clients`.
+Open:
+
+- `http://127.0.0.1:3000/crm/clients`
+- `http://127.0.0.1:3000/crm/sites`
+- `http://127.0.0.1:3000/crm/jobs`
+
+Optional API smoke after the API is running:
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\smoke_crm_api.py
+```
 
 ### Frontend
 
@@ -131,14 +148,22 @@ curl http://localhost:8000/health
 
 Database setup:
 
+Start Postgres:
+
 ```powershell
-cd apps\api
-copy .env.example .env
+docker start stormwater-v2-postgres
+```
+
+Or create it:
+
+```powershell
+docker run --name stormwater-v2-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=stormwater_v2 -p 5432:5432 -d postgres:16
 ```
 
 Set `DATABASE_URL` in `apps/api/.env`, then run migrations:
 
 ```powershell
+cd apps\api
 .\.venv\Scripts\python -m alembic heads
 .\.venv\Scripts\python -m alembic upgrade head
 ```
@@ -149,6 +174,7 @@ API checks:
 .\.venv\Scripts\python -m compileall app scripts tests
 .\.venv\Scripts\python -m pytest -q
 .\.venv\Scripts\python -c "from app.main import app; print([r.path for r in app.routes])"
+.\.venv\Scripts\python scripts\smoke_crm_api.py
 ```
 
 First CRM API routes are available for clients, sites, and jobs under `/v1`. Until auth is added, create requests include `organization_id` in the JSON body, while list/get/patch/delete requests pass `organization_id` as a query parameter.

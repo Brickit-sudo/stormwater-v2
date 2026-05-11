@@ -23,8 +23,15 @@ Restart `npm run dev` after changing `.env.local`.
 To create local demo data, set `apps\api\.env`, run migrations, then run this from `apps\api`:
 
 ```powershell
+docker start stormwater-v2-postgres
 .\.venv\Scripts\python -m alembic upgrade head
 .\.venv\Scripts\python scripts\seed_dev.py
+```
+
+If the Postgres container does not exist yet:
+
+```powershell
+docker run --name stormwater-v2-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=stormwater_v2 -p 5432:5432 -d postgres:16
 ```
 
 Use `--reset-seed` when you want to remove only existing `legacy_source='seed_dev'` demo CRM rows before reseeding:
@@ -33,7 +40,7 @@ Use `--reset-seed` when you want to remove only existing `legacy_source='seed_de
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The seed creates one organization, three clients, five sites, and eight jobs.
+Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, and eight jobs.
 
 ## Run
 
@@ -51,7 +58,11 @@ cd apps\web
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open:
+
+- `http://127.0.0.1:3000/crm/clients`
+- `http://127.0.0.1:3000/crm/sites`
+- `http://127.0.0.1:3000/crm/jobs`
 
 ## CRM Routes
 

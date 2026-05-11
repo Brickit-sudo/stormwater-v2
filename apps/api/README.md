@@ -22,16 +22,22 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 
 Alembic is configured under `apps/api/alembic` and reads the same `DATABASE_URL`.
 
-Create the local database if needed:
+Start the local Postgres container if it already exists:
 
 ```powershell
-createdb -U postgres stormwater_v2
+docker start stormwater-v2-postgres
 ```
 
-If `createdb` is not available:
+Or create it:
 
 ```powershell
-psql -U postgres -c "CREATE DATABASE stormwater_v2;"
+docker run --name stormwater-v2-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=stormwater_v2 -p 5432:5432 -d postgres:16
+```
+
+Create `apps\api\.env`:
+
+```text
+DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 ```
 
 ```powershell
@@ -89,6 +95,12 @@ cd apps\api
 .\.venv\Scripts\python -m pytest -q
 .\.venv\Scripts\python -c "from app.main import app; print([r.path for r in app.routes])"
 .\.venv\Scripts\python -m alembic heads
+```
+
+With the API running, verify the seeded CRM HTTP surface:
+
+```powershell
+.\.venv\Scripts\python scripts\smoke_crm_api.py
 ```
 
 The route tests use an in-memory SQLite engine for only the CRM tables under test, so normal smoke tests do not require local Postgres. `alembic upgrade head` still requires a reachable Postgres database.

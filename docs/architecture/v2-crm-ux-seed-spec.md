@@ -390,11 +390,16 @@ Seed data should be realistic enough to exercise filters, search,
 pagination boundaries, and linked-record rendering. Maine / Northeast
 biased, with one multi-state portfolio example.
 
+The current deterministic implementation lives in `apps/api/scripts/seed_dev.py`
+and is the source of truth for local development. It creates one organization,
+three clients, five sites, and eight jobs, all scoped to the demo organization
+id below.
+
 ### Organization seed
 
 | id | name |
 |---|---|
-| `00000000-0000-0000-0000-000000000001` | Sterling Stormwater (Demo) |
+| `850c47b8-6d32-58a0-8605-955527cadbf3` | Sterling Stormwater Demo |
 
 This is the org pointed to by `NEXT_PUBLIC_DEMO_ORG_ID` during local
 development.
