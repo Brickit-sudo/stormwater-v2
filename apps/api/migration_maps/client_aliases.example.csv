@@ -1,0 +1,4 @@
+source_value,source_field,target_client_name,target_client_status,notes
+"Example Portfolio","site_name_prefix","Example Portfolio Client","active","Example only"
+"Example Manager","managed_by","Example Managed Client","active","Example only"
+"Example Parent Folder","drive_parent_folder","Example Drive Client","inactive","Example only"

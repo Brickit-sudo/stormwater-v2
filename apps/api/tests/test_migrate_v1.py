@@ -221,7 +221,7 @@ def _create_v1_fixture(path: Path, *, include_optional: bool = True) -> Path:
 
 
 def test_script_imports_cleanly() -> None:
-    assert migrate_v1.REPORT_SCHEMA_VERSION == "m1-dry-run-v1"
+    assert migrate_v1.REPORT_SCHEMA_VERSION == "m1-dry-run-v2"
 
 
 def test_reads_available_tables(tmp_path: Path) -> None:
@@ -353,6 +353,7 @@ def test_json_report_shape_is_stable(tmp_path: Path) -> None:
 
     assert list(saved.keys()) == [
         "deferred",
+        "diagnostics",
         "errors",
         "expected_tables",
         "go_no_go",
@@ -376,6 +377,27 @@ def test_json_report_shape_is_stable(tmp_path: Path) -> None:
         "jobs": 2,
         "sites": 2,
     }
+
+
+def test_diagnostics_explain_site_client_relationships(tmp_path: Path) -> None:
+    db_path = _create_v1_fixture(tmp_path / "v1.sqlite")
+
+    report = migrate_v1.run_dry_run(v1_db=db_path, organization_name="Sterling Stormwater")
+    contact_diagnostics = report["diagnostics"]["contacts"]
+    site_diagnostics = report["diagnostics"]["sites"]
+
+    assert contact_diagnostics["total_contacts"] == 2
+    assert contact_diagnostics["contacts_with_account"] == 2
+    assert contact_diagnostics["planned_clients_from_contacts"] == 1
+    assert contact_diagnostics["planned_synthetic_clients"] == 1
+    assert site_diagnostics["relationship_counts"]["total_sites"] == 2
+    assert site_diagnostics["relationship_counts"]["sites_with_client_id"] == 2
+    assert site_diagnostics["relationship_counts"]["sites_with_resolvable_client_id"] == 2
+    assert site_diagnostics["relationship_counts"]["sites_missing_client_id"] == 0
+    assert site_diagnostics["field_presence_counts"]["any_drive"] == 1
+    assert site_diagnostics["drive_counts"]["sites_with_parsed_drive_folder_url"] == 1
+    assert site_diagnostics["duplicate_counts"]["migration_duplicate_warnings"] == 1
+    assert site_diagnostics["sample_unresolved_sites"] == []
 
 
 def test_apply_exits_not_implemented(tmp_path: Path, capsys) -> None:

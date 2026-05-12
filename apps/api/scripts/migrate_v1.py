@@ -6,6 +6,7 @@ import re
 import sqlite3
 import sys
 import uuid
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
@@ -15,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 
 
 LEGACY_SOURCE = "v1_monday"
-REPORT_SCHEMA_VERSION = "m1-dry-run-v1"
+REPORT_SCHEMA_VERSION = "m1-dry-run-v2"
 EXPECTED_TABLES = (
     "crm_contacts",
     "crm_sites",
@@ -384,6 +385,7 @@ def _empty_report(source: SourceData, organization_name: str) -> dict[str, Any]:
             "photos_files": source.source_row_counts.get("crm_report_artifacts", 0),
             "communications": source.source_row_counts.get("crm_communications", 0),
         },
+        "diagnostics": {},
         "errors": [],
         "go_no_go": {
             "status": "OK",
@@ -1126,6 +1128,7 @@ def build_migration_plan(
     for table_name in ("clients", "contacts", "sites", "jobs"):
         report["planned_counts"][table_name] = len(report["planned"][table_name])
 
+    report["diagnostics"] = _build_diagnostics(source, report)
     report["go_no_go"]["warning_count"] = _warning_count(report)
     report["go_no_go"]["error_count"] = len(report["errors"])
     if report["errors"]:
@@ -1154,6 +1157,324 @@ def _format_count_lines(counts: dict[str, int]) -> list[str]:
     return [f"- {name}: {count}" for name, count in counts.items()]
 
 
+def _has_any_value(row: dict[str, Any], names: Sequence[str]) -> bool:
+    return any(name in row and _clean(row.get(name)) is not None for name in names)
+
+
+def _norm_or_blank(value: Any) -> str:
+    text = _clean(value)
+    return _normalize_key(text) if text else ""
+
+
+def _site_name_prefix(value: Any) -> str:
+    text = _clean(value) or ""
+    if not text:
+        return ""
+
+    for separator in (" - ", " \u2013 ", " \u2014 ", " | ", ": "):
+        if separator in text:
+            return _clean(text.split(separator, 1)[0]) or ""
+
+    numbered = re.match(r"^(.+?)\s+#?\d+[A-Za-z]?\b", text)
+    if numbered:
+        return _clean(numbered.group(1)) or ""
+    return ""
+
+
+def _group_size_summary(values: Iterable[str], *, limit: int = 10) -> dict[str, Any]:
+    counts = Counter(value for value in values if value)
+    repeated_sizes = [count for count in counts.values() if count >= 2]
+    return {
+        "distinct_values": len(counts),
+        "groups_with_2_or_more": len(repeated_sizes),
+        "rows_in_groups_with_2_or_more": sum(repeated_sizes),
+        "top_group_sizes": sorted(counts.values(), reverse=True)[:limit],
+    }
+
+
+def _count_rows(rows: Sequence[dict[str, Any]], predicate) -> int:
+    return sum(1 for row in rows if predicate(row))
+
+
+def _build_site_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[str, Any]:
+    sites_table = source.tables.get("crm_sites")
+    site_rows = sites_table.rows if sites_table else []
+    client_lookup = report["lookup_maps"]["client_legacy_id_to_proposed_id"]
+
+    rows_by_key: dict[str, dict[str, Any]] = {}
+    for row_number, row in enumerate(site_rows, start=1):
+        row_key = _clean(_first(row, ("site_id", "id"))) or f"synthetic:site:row:{row_number}"
+        rows_by_key[row_key] = row
+
+    def raw_client_id(row: dict[str, Any]) -> str | None:
+        return _clean(row.get("client_id"))
+
+    sites_with_client_id = _count_rows(site_rows, lambda row: raw_client_id(row) is not None)
+    sites_with_resolvable_client_id = _count_rows(
+        site_rows,
+        lambda row: bool(raw_client_id(row) and raw_client_id(row) in client_lookup),
+    )
+    sites_with_unresolved_client_id = _count_rows(
+        site_rows,
+        lambda row: bool(raw_client_id(row) and raw_client_id(row) not in client_lookup),
+    )
+    sites_missing_client_id = len(site_rows) - sites_with_client_id
+    distinct_client_ids = {raw_client_id(row) for row in site_rows if raw_client_id(row)}
+    distinct_unresolved_client_ids = {
+        client_id for client_id in distinct_client_ids if client_id not in client_lookup
+    }
+
+    possible_client_text_fields = ("account", "client", "client_name", "company", "company_name")
+    drive_fields = ("gdrive_url", "drive_folder_url", "drive_folder_id")
+    field_presence = {
+        "client_id": sites_with_client_id,
+        "possible_client_text_field": _count_rows(
+            site_rows,
+            lambda row: _has_any_value(row, possible_client_text_fields),
+        ),
+        "managed_by": _count_rows(site_rows, lambda row: _has_any_value(row, ("managed_by",))),
+        "contact": _count_rows(site_rows, lambda row: _has_any_value(row, ("contact", "contact_name"))),
+        "email": _count_rows(site_rows, lambda row: _has_any_value(row, ("email",))),
+        "phone": _count_rows(site_rows, lambda row: _has_any_value(row, ("phone",))),
+        "address": _count_rows(site_rows, lambda row: _has_any_value(row, ("address",))),
+        "city_state": _count_rows(
+            site_rows,
+            lambda row: _has_any_value(row, ("city",)) and _has_any_value(row, ("state",)),
+        ),
+        "systems": _count_rows(site_rows, lambda row: _has_any_value(row, ("systems",))),
+        "service_month": _count_rows(site_rows, lambda row: _has_any_value(row, ("service_month",))),
+        "status": _count_rows(site_rows, lambda row: _has_any_value(row, ("status", "active_status"))),
+        "notes": _count_rows(site_rows, lambda row: _has_any_value(row, ("notes",))),
+        "any_drive": _count_rows(site_rows, lambda row: _has_any_value(row, drive_fields)),
+        "gdrive_url": _count_rows(site_rows, lambda row: _has_any_value(row, ("gdrive_url",))),
+        "drive_folder_url": _count_rows(site_rows, lambda row: _has_any_value(row, ("drive_folder_url",))),
+        "drive_folder_id": _count_rows(site_rows, lambda row: _has_any_value(row, ("drive_folder_id",))),
+    }
+
+    parsed_drive_folders = 0
+    explicit_valid_drive_folder_ids = 0
+    drive_warning_counts: Counter[str] = Counter()
+    for row in site_rows:
+        raw_url = _first(row, ("gdrive_url", "drive_folder_url"))
+        parsed = parse_drive_url(raw_url)
+        if parsed.drive_folder_id:
+            parsed_drive_folders += 1
+        if parsed.warning:
+            drive_warning_counts[parsed.warning] += 1
+        explicit_folder_id = _clean(row.get("drive_folder_id"))
+        if explicit_folder_id and _DRIVE_ID_RE.match(explicit_folder_id):
+            explicit_valid_drive_folder_ids += 1
+
+    name_counts = Counter(_norm_or_blank(row.get("name")) for row in site_rows if _norm_or_blank(row.get("name")))
+    name_address_counts = Counter(
+        (_norm_or_blank(row.get("name")), _norm_or_blank(row.get("address")))
+        for row in site_rows
+        if _norm_or_blank(row.get("name"))
+    )
+
+    prefix_values = [_norm_or_blank(_site_name_prefix(row.get("name"))) for row in site_rows]
+    managed_by_values = [_norm_or_blank(row.get("managed_by")) for row in site_rows]
+    city_state_values = [
+        ":".join((_norm_or_blank(row.get("city")), _norm_or_blank(row.get("state"))))
+        for row in site_rows
+        if _norm_or_blank(row.get("city")) and _norm_or_blank(row.get("state"))
+    ]
+    prefix_managed_values = [
+        ":".join((_norm_or_blank(_site_name_prefix(row.get("name"))), _norm_or_blank(row.get("managed_by"))))
+        for row in site_rows
+        if _norm_or_blank(_site_name_prefix(row.get("name"))) and _norm_or_blank(row.get("managed_by"))
+    ]
+
+    unresolved_samples = []
+    for orphan in report["orphans"].get("sites", [])[:10]:
+        row_key = orphan.get("row_key")
+        row = rows_by_key.get(row_key, {})
+        client_id = raw_client_id(row)
+        unresolved_samples.append(
+            {
+                "row_key": row_key,
+                "client_id_status": (
+                    "missing"
+                    if client_id is None
+                    else "resolved"
+                    if client_id in client_lookup
+                    else "unresolved"
+                ),
+                "has_managed_by": _has_any_value(row, ("managed_by",)),
+                "has_site_name_prefix": bool(_site_name_prefix(row.get("name"))),
+                "has_city_state": _has_any_value(row, ("city",)) and _has_any_value(row, ("state",)),
+                "has_drive": _has_any_value(row, drive_fields),
+                "has_systems": _has_any_value(row, ("systems",)),
+            },
+        )
+
+    return {
+        "relationship_counts": {
+            "total_sites": len(site_rows),
+            "planned_sites": report["planned_counts"].get("sites", len(report["planned"]["sites"])),
+            "orphan_site_rows": len(report["orphans"].get("sites", [])),
+            "sites_with_client_id": sites_with_client_id,
+            "sites_with_resolvable_client_id": sites_with_resolvable_client_id,
+            "sites_with_unresolved_client_id": sites_with_unresolved_client_id,
+            "sites_missing_client_id": sites_missing_client_id,
+            "distinct_nonempty_client_ids": len(distinct_client_ids),
+            "distinct_unresolved_client_ids": len(distinct_unresolved_client_ids),
+        },
+        "field_presence_counts": field_presence,
+        "drive_counts": {
+            "sites_with_any_drive": field_presence["any_drive"],
+            "sites_with_parsed_drive_folder_url": parsed_drive_folders,
+            "sites_with_explicit_valid_drive_folder_id": explicit_valid_drive_folder_ids,
+            "drive_warning_counts": dict(sorted(drive_warning_counts.items())),
+        },
+        "duplicate_counts": {
+            "exact_site_name_groups": sum(1 for count in name_counts.values() if count >= 2),
+            "exact_site_name_rows": sum(count for count in name_counts.values() if count >= 2),
+            "exact_site_name_address_groups": sum(1 for count in name_address_counts.values() if count >= 2),
+            "exact_site_name_address_rows": sum(count for count in name_address_counts.values() if count >= 2),
+            "migration_duplicate_warnings": len(
+                [
+                    warning
+                    for warning in report["warnings"].get("duplicates", [])
+                    if warning.get("table") == "crm_sites"
+                ],
+            ),
+        },
+        "grouping_clues": {
+            "site_name_prefix": _group_size_summary(prefix_values),
+            "managed_by": _group_size_summary(managed_by_values),
+            "city_state": _group_size_summary(city_state_values),
+            "site_name_prefix_plus_managed_by": _group_size_summary(prefix_managed_values),
+        },
+        "sample_unresolved_sites": unresolved_samples,
+    }
+
+
+def _build_contact_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[str, Any]:
+    contacts_table = source.tables.get("crm_contacts")
+    contact_rows = contacts_table.rows if contacts_table else []
+    planned_clients = report["planned"].get("clients", [])
+    planned_contacts = report["planned"].get("contacts", [])
+
+    return {
+        "total_contacts": len(contact_rows),
+        "contacts_with_client_id": _count_rows(
+            contact_rows,
+            lambda row: _has_any_value(row, ("client_id", "contact_id", "id")),
+        ),
+        "contacts_with_account": _count_rows(
+            contact_rows,
+            lambda row: _has_any_value(row, ("account", "company", "company_name", "client_name", "client")),
+        ),
+        "contacts_with_sites_managed": _count_rows(
+            contact_rows,
+            lambda row: _has_any_value(row, ("sites_managed", "site_s_managed")),
+        ),
+        "contacts_with_email": _count_rows(contact_rows, lambda row: _has_any_value(row, ("email",))),
+        "contacts_with_phone": _count_rows(contact_rows, lambda row: _has_any_value(row, ("phone",))),
+        "contacts_with_status": _count_rows(
+            contact_rows,
+            lambda row: _has_any_value(row, ("active_status", "status")),
+        ),
+        "planned_clients_from_contacts": len(
+            [client for client in planned_clients if client.get("legacy_source_table") == "crm_contacts"],
+        ),
+        "planned_synthetic_clients": len(
+            [client for client in planned_clients if client.get("legacy_source_table") == "synthetic"],
+        ),
+        "planned_contacts": len(planned_contacts),
+    }
+
+
+def _build_report_artifact_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[str, Any]:
+    artifacts_table = source.tables.get("crm_report_artifacts")
+    artifacts = artifacts_table.rows if artifacts_table else []
+    site_rows = source.tables.get("crm_sites").rows if source.tables.get("crm_sites") else []
+    job_rows = source.tables.get("crm_jobs").rows if source.tables.get("crm_jobs") else []
+    client_lookup = report["lookup_maps"]["client_legacy_id_to_proposed_id"]
+    site_ids = {_clean(_first(row, ("site_id", "id"))) for row in site_rows}
+    job_ids = {_clean(_first(row, ("job_id", "id"))) for row in job_rows}
+    site_ids.discard(None)
+    job_ids.discard(None)
+
+    return {
+        "total_report_artifacts": len(artifacts),
+        "artifacts_with_project_id": _count_rows(
+            artifacts,
+            lambda row: _has_any_value(row, ("project_id",)),
+        ),
+        "artifacts_with_site_id": _count_rows(artifacts, lambda row: _has_any_value(row, ("site_id",))),
+        "artifacts_with_resolvable_site_id": _count_rows(
+            artifacts,
+            lambda row: bool(_clean(row.get("site_id")) and _clean(row.get("site_id")) in site_ids),
+        ),
+        "artifacts_with_client_id": _count_rows(artifacts, lambda row: _has_any_value(row, ("client_id",))),
+        "artifacts_with_resolvable_client_id": _count_rows(
+            artifacts,
+            lambda row: bool(_clean(row.get("client_id")) and _clean(row.get("client_id")) in client_lookup),
+        ),
+        "artifacts_with_job_id": _count_rows(artifacts, lambda row: _has_any_value(row, ("job_id",))),
+        "artifacts_with_resolvable_job_id": _count_rows(
+            artifacts,
+            lambda row: bool(_clean(row.get("job_id")) and _clean(row.get("job_id")) in job_ids),
+        ),
+        "artifacts_with_file_path": _count_rows(artifacts, lambda row: _has_any_value(row, ("file_path",))),
+        "artifacts_with_drive_folder_id": _count_rows(
+            artifacts,
+            lambda row: _has_any_value(row, ("drive_folder_id",)),
+        ),
+        "artifacts_with_drive_web_url": _count_rows(
+            artifacts,
+            lambda row: _has_any_value(row, ("drive_web_url",)),
+        ),
+    }
+
+
+def _build_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_table_counts": source.source_row_counts,
+        "warning_counts": {
+            category: len(warnings)
+            for category, warnings in sorted(report.get("warnings", {}).items())
+        },
+        "contacts": _build_contact_diagnostics(source, report),
+        "sites": _build_site_diagnostics(source, report),
+        "report_artifacts": _build_report_artifact_diagnostics(source, report),
+    }
+
+
+def _markdown_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> list[str]:
+    if not rows:
+        return ["- None"]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(str(value) for value in row) + " |")
+    return lines
+
+
+def _format_diagnostic_counts(counts: dict[str, Any]) -> list[str]:
+    return _markdown_table(("Metric", "Count"), [(name, value) for name, value in counts.items()])
+
+
+def _format_grouping_clues(grouping_clues: dict[str, dict[str, Any]]) -> list[str]:
+    return _markdown_table(
+        ("Signal", "Distinct", "Groups >= 2", "Rows in Groups >= 2", "Top Group Sizes"),
+        [
+            (
+                name,
+                summary.get("distinct_values", 0),
+                summary.get("groups_with_2_or_more", 0),
+                summary.get("rows_in_groups_with_2_or_more", 0),
+                ", ".join(str(value) for value in summary.get("top_group_sizes", [])) or "-",
+            )
+            for name, summary in grouping_clues.items()
+        ],
+    )
+
+
 def _warning_lines(report: dict[str, Any], category: str) -> list[str]:
     warnings = report["warnings"].get(category, [])
     if not warnings:
@@ -1170,6 +1491,10 @@ def _warning_lines(report: dict[str, Any], category: str) -> list[str]:
 
 def render_markdown_report(report: dict[str, Any]) -> str:
     deferred = report["deferred"]
+    diagnostics = report.get("diagnostics", {})
+    contact_diagnostics = diagnostics.get("contacts", {})
+    site_diagnostics = diagnostics.get("sites", {})
+    report_artifact_diagnostics = diagnostics.get("report_artifacts", {})
     sections = [
         "# V1 to V2 Migration M1 Dry-Run Report",
         "",
@@ -1182,44 +1507,94 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "## 3. Source Row Counts",
         *_format_count_lines(report["source_row_counts"]),
         "",
-        "## 4. Planned Clients",
+        "## 4. Diagnostic Summary",
+        "### Contact Client Clues",
+        *_format_diagnostic_counts(contact_diagnostics),
+        "",
+        "### Site Client Relationship Counts",
+        *_format_diagnostic_counts(site_diagnostics.get("relationship_counts", {})),
+        "",
+        "### Site Field Presence Counts",
+        *_format_diagnostic_counts(site_diagnostics.get("field_presence_counts", {})),
+        "",
+        "### Site Drive Counts",
+        *_format_diagnostic_counts(site_diagnostics.get("drive_counts", {})),
+        "",
+        "### Site Duplicate Counts",
+        *_format_diagnostic_counts(site_diagnostics.get("duplicate_counts", {})),
+        "",
+        "### Site Grouping Clues",
+        *_format_grouping_clues(site_diagnostics.get("grouping_clues", {})),
+        "",
+        "### Report Artifact Linkage Counts",
+        *_format_diagnostic_counts(report_artifact_diagnostics),
+        "",
+        "### Warning Counts",
+        *_format_diagnostic_counts(diagnostics.get("warning_counts", {})),
+        "",
+        "### Sanitized Unresolved Site Samples",
+        *_markdown_table(
+            (
+                "Row",
+                "Client ID",
+                "Managed By",
+                "Prefix",
+                "City/State",
+                "Drive",
+                "Systems",
+            ),
+            [
+                (
+                    sample.get("row_key"),
+                    sample.get("client_id_status"),
+                    sample.get("has_managed_by"),
+                    sample.get("has_site_name_prefix"),
+                    sample.get("has_city_state"),
+                    sample.get("has_drive"),
+                    sample.get("has_systems"),
+                )
+                for sample in site_diagnostics.get("sample_unresolved_sites", [])
+            ],
+        ),
+        "",
+        "## 5. Planned Clients",
         f"- Would create/update: {report['planned_counts']['clients']}",
         "",
-        "## 5. Planned Contacts",
+        "## 6. Planned Contacts",
         f"- Would create/update: {report['planned_counts']['contacts']}",
         "",
-        "## 6. Planned Sites",
+        "## 7. Planned Sites",
         f"- Would create/update: {report['planned_counts']['sites']}",
         "",
-        "## 7. Planned Jobs",
+        "## 8. Planned Jobs",
         f"- Would create/update: {report['planned_counts']['jobs']}",
         "",
-        "## 8. Relationship Warnings",
+        "## 9. Relationship Warnings",
         *_warning_lines(report, "relationship"),
         "",
-        "## 9. Duplicate Warnings",
+        "## 10. Duplicate Warnings",
         *_warning_lines(report, "duplicates"),
         "",
-        "## 10. Status Mapping Warnings",
+        "## 11. Status Mapping Warnings",
         *_warning_lines(report, "status_mapping"),
         "",
-        "## 11. Date Parsing Warnings",
+        "## 12. Date Parsing Warnings",
         *_warning_lines(report, "date_parsing"),
         "",
-        "## 12. Drive URL Warnings",
+        "## 13. Drive URL Warnings",
         *_warning_lines(report, "drive_urls"),
         "",
-        "## 13. Orphan Records",
+        "## 14. Orphan Records",
         f"- Sites: {len(report['orphans']['sites'])}",
         f"- Jobs: {len(report['orphans']['jobs'])}",
         "",
-        "## 14. Deferred Records",
+        "## 15. Deferred Records",
         f"- Leads: {deferred['leads']}",
         f"- Reports: {deferred['reports']}",
         f"- Photos/files: {deferred['photos_files']}",
         f"- Communications: {deferred['communications']}",
         "",
-        "## 15. Final Go/No-Go Summary",
+        "## 16. Final Go/No-Go Summary",
         f"- Status: {report['go_no_go']['status']}",
         f"- Warnings: {report['go_no_go']['warning_count']}",
         f"- Errors: {report['go_no_go']['error_count']}",
