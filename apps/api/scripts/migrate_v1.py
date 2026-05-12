@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sqlite3
@@ -27,6 +28,48 @@ EXPECTED_TABLES = (
 )
 _MIGRATION_UUID_NAMESPACE = uuid.UUID("7be0a39f-5581-461e-8b89-8f9d0bc3d2a4")
 _DRIVE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,}$")
+CLIENT_ALIAS_EXPECTED_COLUMNS = (
+    "source_value",
+    "source_field",
+    "target_client_name",
+    "target_client_status",
+    "notes",
+)
+CLIENT_ALIAS_REQUIRED_COLUMNS = ("source_value", "source_field", "target_client_name")
+CLIENT_ALIAS_SOURCE_FIELDS = (
+    "site_name_exact",
+    "site_name_prefix",
+    "site_name_contains",
+    "managed_by",
+    "drive_parent_folder",
+    "account",
+    "client_id",
+)
+CLIENT_ALIAS_PRIORITY = {
+    "client_id": 2,
+    "account": 3,
+    "managed_by": 4,
+    "site_name_exact": 5,
+    "site_name_prefix": 6,
+    "site_name_contains": 7,
+    "drive_parent_folder": 8,
+}
+CLIENT_ALIAS_CLIENT_STATUSES = {"active", "inactive", "prospect", "archived"}
+ACCOUNT_FIELD_NAMES = ("account", "client", "client_name", "company", "company_name")
+DRIVE_PARENT_FIELD_NAMES = (
+    "drive_parent_folder",
+    "drive_parent_folder_name",
+    "drive_parent_folder_path",
+    "drive_parent_folder_id",
+    "drive_parent_folder_url",
+    "parent_drive_folder",
+    "parent_folder",
+    "parent_folder_name",
+    "parent_folder_id",
+    "parent_folder_url",
+)
+UNRESOLVED_SITE_SAMPLE_LIMIT = 10
+TOP_UNRESOLVED_PREFIX_LIMIT = 10
 
 
 @dataclass(frozen=True)
@@ -57,6 +100,25 @@ class DriveParseResult:
     drive_folder_url: str | None
     drive_folder_id: str | None
     warning: str | None = None
+
+
+@dataclass(frozen=True)
+class ClientAlias:
+    row_number: int
+    source_value: str
+    normalized_source_value: str
+    source_field: str
+    target_client_name: str
+    target_client_status: str
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
+class ClientAliasConfig:
+    path: str | None
+    aliases: list[ClientAlias]
+    summary: dict[str, Any]
+    warnings: list[dict[str, Any]]
 
 
 def _clean(value: Any) -> str | None:
@@ -105,6 +167,196 @@ def _append_warning(report: dict[str, Any], category: str, warning: dict[str, An
 
 def _warning_count(report: dict[str, Any]) -> int:
     return sum(len(items) for items in report.get("warnings", {}).values())
+
+
+def _append_alias_warning(report: dict[str, Any], warning: dict[str, Any]) -> None:
+    report.setdefault("alias_warnings", []).append(warning)
+    _append_warning(report, "client_aliases", warning)
+
+
+def _site_columns(source: SourceData) -> set[str]:
+    table = source.tables.get("crm_sites")
+    return set(table.columns) if table else set()
+
+
+def _supportable_alias_source_fields(source: SourceData) -> list[str]:
+    columns = _site_columns(source)
+    supported = []
+    if "client_id" in columns:
+        supported.append("client_id")
+    if any(name in columns for name in ACCOUNT_FIELD_NAMES):
+        supported.append("account")
+    if "managed_by" in columns:
+        supported.append("managed_by")
+    if "name" in columns:
+        supported.extend(("site_name_exact", "site_name_prefix", "site_name_contains"))
+    if any(name in columns for name in DRIVE_PARENT_FIELD_NAMES):
+        supported.append("drive_parent_folder")
+    return [field for field in CLIENT_ALIAS_SOURCE_FIELDS if field in set(supported)]
+
+
+def _empty_client_alias_config(source: SourceData, path: str | Path | None = None) -> ClientAliasConfig:
+    supported_fields = _supportable_alias_source_fields(source)
+    return ClientAliasConfig(
+        path=str(Path(path).expanduser().resolve()) if path else None,
+        aliases=[],
+        summary={
+            "file_path": str(Path(path).expanduser().resolve()) if path else None,
+            "provided": path is not None,
+            "rows_loaded": 0,
+            "rows_valid": 0,
+            "rows_invalid": 0,
+            "unsupported_source_field_rows": 0,
+            "supported_source_fields": supported_fields,
+            "unsupported_source_fields": [
+                field for field in CLIENT_ALIAS_SOURCE_FIELDS if field not in supported_fields
+            ],
+        },
+        warnings=[],
+    )
+
+
+def read_client_aliases(path: str | Path, source: SourceData) -> ClientAliasConfig:
+    alias_path = Path(path).expanduser().resolve()
+    if not alias_path.exists():
+        raise FileNotFoundError(f"Client alias mapping file not found: {alias_path}")
+    if not alias_path.is_file():
+        raise FileNotFoundError(f"Client alias mapping path is not a file: {alias_path}")
+
+    supported_fields = set(_supportable_alias_source_fields(source))
+    warnings: list[dict[str, Any]] = []
+    aliases: list[ClientAlias] = []
+    rows_loaded = 0
+    rows_invalid = 0
+    unsupported_rows = 0
+
+    with alias_path.open("r", encoding="utf-8-sig", newline="") as file:
+        reader = csv.DictReader(file)
+        fieldnames = tuple(reader.fieldnames or ())
+        missing_required = [name for name in CLIENT_ALIAS_REQUIRED_COLUMNS if name not in fieldnames]
+        if missing_required:
+            raise ValueError(
+                "Client alias mapping file is missing required columns: "
+                + ", ".join(missing_required),
+            )
+
+        for optional_column in (
+            name for name in CLIENT_ALIAS_EXPECTED_COLUMNS if name not in fieldnames
+        ):
+            warnings.append(
+                {
+                    "table": "client_aliases",
+                    "row_key": str(alias_path),
+                    "reason": "missing-optional-column",
+                    "column": optional_column,
+                    "message": f"{optional_column} column is absent; default behavior will be used.",
+                },
+            )
+
+        for row_number, row in enumerate(reader, start=2):
+            cleaned = {key: _clean(value) for key, value in row.items() if key is not None}
+            if not any(cleaned.get(name) for name in CLIENT_ALIAS_EXPECTED_COLUMNS):
+                continue
+
+            rows_loaded += 1
+            source_value = cleaned.get("source_value")
+            source_field = (cleaned.get("source_field") or "").lower()
+            target_client_name = cleaned.get("target_client_name")
+            missing_values = [
+                name
+                for name, value in (
+                    ("source_value", source_value),
+                    ("source_field", source_field),
+                    ("target_client_name", target_client_name),
+                )
+                if not value
+            ]
+            if missing_values:
+                rows_invalid += 1
+                warnings.append(
+                    {
+                        "table": "client_aliases",
+                        "row_key": f"row:{row_number}",
+                        "reason": "invalid-alias-row",
+                        "missing_columns": missing_values,
+                    },
+                )
+                continue
+
+            if source_field not in CLIENT_ALIAS_SOURCE_FIELDS:
+                rows_invalid += 1
+                warnings.append(
+                    {
+                        "table": "client_aliases",
+                        "row_key": f"row:{row_number}",
+                        "reason": "unknown-source-field",
+                        "source_field": source_field,
+                        "supported_source_fields": list(CLIENT_ALIAS_SOURCE_FIELDS),
+                    },
+                )
+                continue
+
+            if source_field not in supported_fields:
+                unsupported_rows += 1
+                warnings.append(
+                    {
+                        "table": "client_aliases",
+                        "row_key": f"row:{row_number}",
+                        "reason": "unsupported-source-field",
+                        "source_field": source_field,
+                        "message": (
+                            f"{source_field} is recognized but cannot be resolved from the "
+                            "available crm_sites columns in this V1 database."
+                        ),
+                    },
+                )
+                continue
+
+            raw_status = (cleaned.get("target_client_status") or "").lower()
+            if raw_status in CLIENT_ALIAS_CLIENT_STATUSES:
+                target_status = raw_status
+            else:
+                target_status = "active"
+                warnings.append(
+                    {
+                        "table": "client_aliases",
+                        "row_key": f"row:{row_number}",
+                        "reason": "invalid-target-client-status",
+                        "raw_status": cleaned.get("target_client_status"),
+                        "mapped_status": target_status,
+                        "message": "target_client_status must be active, inactive, prospect, or archived.",
+                    },
+                )
+
+            aliases.append(
+                ClientAlias(
+                    row_number=row_number,
+                    source_value=source_value,
+                    normalized_source_value=_normalize_key(source_value),
+                    source_field=source_field,
+                    target_client_name=target_client_name,
+                    target_client_status=target_status,
+                    notes=cleaned.get("notes"),
+                ),
+            )
+
+    return ClientAliasConfig(
+        path=str(alias_path),
+        aliases=aliases,
+        summary={
+            "file_path": str(alias_path),
+            "provided": True,
+            "rows_loaded": rows_loaded,
+            "rows_valid": len(aliases),
+            "rows_invalid": rows_invalid,
+            "unsupported_source_field_rows": unsupported_rows,
+            "supported_source_fields": _supportable_alias_source_fields(source),
+            "unsupported_source_fields": [
+                field for field in CLIENT_ALIAS_SOURCE_FIELDS if field not in supported_fields
+            ],
+        },
+        warnings=warnings,
+    )
 
 
 def parse_v1_date(value: Any) -> DateParseResult:
@@ -374,7 +626,12 @@ def _empty_report(source: SourceData, organization_name: str) -> dict[str, Any]:
             "date_parsing": [],
             "drive_urls": [],
             "data_quality": [],
+            "client_aliases": [],
         },
+        "alias_summary": {},
+        "alias_warnings": [],
+        "client_resolution_summary": {},
+        "unresolved_site_samples": [],
         "orphans": {
             "sites": [],
             "jobs": [],
@@ -439,6 +696,81 @@ def _ensure_synthetic_client(
             "phone": None,
             "billing_address": None,
             "notes": f"Synthetic parent created by M1 dry-run for {reason}.",
+            "drive_folder_url": None,
+            "drive_folder_id": None,
+        },
+    }
+    clients_by_norm[norm] = proposed
+    report["planned"]["clients"].append(proposed)
+    report["lookup_maps"]["client_legacy_id_to_proposed_id"][legacy_id] = proposed["proposed_id"]
+    report["lookup_maps"]["client_name_to_proposed_id"][norm] = proposed["proposed_id"]
+    return proposed
+
+
+def _client_alias_provenance(alias: ClientAlias) -> dict[str, Any]:
+    return {
+        "alias_row_number": alias.row_number,
+        "source_field": alias.source_field,
+        "source_value": alias.source_value,
+        "target_client_name": alias.target_client_name,
+        "target_client_status": alias.target_client_status,
+        "notes": alias.notes,
+    }
+
+
+def _ensure_alias_client(
+    report: dict[str, Any],
+    clients_by_norm: dict[str, dict[str, Any]],
+    alias: ClientAlias,
+) -> dict[str, Any]:
+    norm = _normalize_key(alias.target_client_name)
+    provenance = _client_alias_provenance(alias)
+    existing = clients_by_norm.get(norm)
+    if existing:
+        existing_aliases = existing.setdefault("client_aliases", [])
+        if provenance not in existing_aliases:
+            existing_aliases.append(provenance)
+        existing_status = existing.get("fields", {}).get("status")
+        if (
+            existing.get("legacy_source_table") == "client_aliases"
+            and existing_status
+            and existing_status != alias.target_client_status
+        ):
+            _append_alias_warning(
+                report,
+                {
+                    "table": "client_aliases",
+                    "row_key": f"row:{alias.row_number}",
+                    "reason": "target-client-status-conflict",
+                    "target_client_name": alias.target_client_name,
+                    "kept_status": existing_status,
+                    "ignored_status": alias.target_client_status,
+                },
+            )
+        return existing
+
+    legacy_id = f"synthetic:client:{norm}"
+    notes = "Proposed by M1.6 client alias mapping."
+    if alias.notes:
+        notes = f"{notes}\n\nAlias notes: {alias.notes}"
+    proposed = {
+        "operation": "would_create",
+        "target_table": "clients",
+        "proposed_id": _proposed_uuid("client", legacy_id),
+        "legacy_source": LEGACY_SOURCE,
+        "legacy_id": legacy_id,
+        "legacy_source_table": "client_aliases",
+        "alternate_legacy_ids": [],
+        "client_aliases": [provenance],
+        "fields": {
+            "client_code": None,
+            "name": alias.target_client_name,
+            "status": alias.target_client_status,
+            "primary_contact_name": None,
+            "email": None,
+            "phone": None,
+            "billing_address": None,
+            "notes": notes,
             "drive_folder_url": None,
             "drive_folder_id": None,
         },
@@ -696,10 +1028,180 @@ def _record_date_warning(
         )
 
 
+def _values_for_fields(row: dict[str, Any], fields: Sequence[str]) -> list[str]:
+    values: list[str] = []
+    for field in fields:
+        value = _clean(row.get(field))
+        if value:
+            values.append(value)
+    return values
+
+
+def _drive_parent_values(row: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for value in _values_for_fields(row, DRIVE_PARENT_FIELD_NAMES):
+        values.append(value)
+        parsed = parse_drive_url(value)
+        if parsed.drive_folder_id:
+            values.append(parsed.drive_folder_id)
+        if parsed.drive_folder_url:
+            values.append(parsed.drive_folder_url)
+    return values
+
+
+def _alias_value_match(alias: ClientAlias, candidate: Any) -> bool:
+    candidate_text = _clean(candidate)
+    return bool(candidate_text and _normalize_key(candidate_text) == alias.normalized_source_value)
+
+
+def _site_name_value(row: dict[str, Any]) -> str | None:
+    return _clean(_first(row, ("name", "site_name")))
+
+
+def _site_name_prefix_matches(alias: ClientAlias, site_name: str | None) -> bool:
+    if not site_name:
+        return False
+    site_norm = _normalize_key(site_name)
+    prefix = _site_name_prefix(site_name)
+    prefix_norm = _normalize_key(prefix) if prefix else ""
+    return (
+        prefix_norm == alias.normalized_source_value
+        or site_norm == alias.normalized_source_value
+        or site_norm.startswith(f"{alias.normalized_source_value}-")
+    )
+
+
+def _site_alias_match_value(alias: ClientAlias, row: dict[str, Any]) -> str | None:
+    site_name = _site_name_value(row)
+
+    if alias.source_field == "site_name_exact":
+        return site_name if _alias_value_match(alias, site_name) else None
+
+    if alias.source_field == "site_name_prefix":
+        if _site_name_prefix_matches(alias, site_name):
+            return _site_name_prefix(site_name) or site_name
+        return None
+
+    if alias.source_field == "site_name_contains":
+        site_norm = _normalize_key(site_name) if site_name else ""
+        return site_name if alias.normalized_source_value in site_norm else None
+
+    field_values: list[str]
+    if alias.source_field == "client_id":
+        field_values = _values_for_fields(row, ("client_id",))
+    elif alias.source_field == "account":
+        field_values = _values_for_fields(row, ACCOUNT_FIELD_NAMES)
+    elif alias.source_field == "managed_by":
+        field_values = _values_for_fields(row, ("managed_by",))
+    elif alias.source_field == "drive_parent_folder":
+        field_values = _drive_parent_values(row)
+    else:
+        field_values = []
+
+    for value in field_values:
+        if _alias_value_match(alias, value):
+            return value
+    return None
+
+
+def _site_alias_matches(
+    row: dict[str, Any],
+    alias_config: ClientAliasConfig,
+) -> list[tuple[ClientAlias, str]]:
+    matches = []
+    for alias in alias_config.aliases:
+        matched_value = _site_alias_match_value(alias, row)
+        if matched_value:
+            matches.append((alias, matched_value))
+    return sorted(
+        matches,
+        key=lambda item: (CLIENT_ALIAS_PRIORITY[item[0].source_field], item[0].row_number),
+    )
+
+
+def _resolve_site_client(
+    report: dict[str, Any],
+    row: dict[str, Any],
+    row_key: str,
+    clients_by_norm: dict[str, dict[str, Any]],
+    alias_config: ClientAliasConfig,
+) -> dict[str, Any]:
+    raw_client_id = _clean(row.get("client_id"))
+    direct_client_id = (
+        report["lookup_maps"]["client_legacy_id_to_proposed_id"].get(raw_client_id)
+        if raw_client_id
+        else None
+    )
+    if direct_client_id:
+        return {
+            "client_proposed_id": direct_client_id,
+            "method": "direct_client_id",
+            "source_field": "client_id",
+            "source_value": raw_client_id,
+            "matched_value": raw_client_id,
+            "target_client_name": None,
+            "alias_row_number": None,
+            "warning": None,
+        }
+
+    alias_matches = _site_alias_matches(row, alias_config)
+    if alias_matches:
+        chosen_alias, matched_value = alias_matches[0]
+        warning_reason = None
+        if len(alias_matches) > 1:
+            warning_reason = "multiple-alias-matches"
+            _append_alias_warning(
+                report,
+                {
+                    "table": "crm_sites",
+                    "row_key": row_key,
+                    "reason": warning_reason,
+                    "selected_alias_row": chosen_alias.row_number,
+                    "selected_source_field": chosen_alias.source_field,
+                    "selected_source_value": chosen_alias.source_value,
+                    "selected_target_client_name": chosen_alias.target_client_name,
+                    "matched_alias_count": len(alias_matches),
+                    "matched_aliases": [
+                        {
+                            "alias_row_number": alias.row_number,
+                            "source_field": alias.source_field,
+                            "source_value": alias.source_value,
+                            "target_client_name": alias.target_client_name,
+                        }
+                        for alias, _ in alias_matches[:10]
+                    ],
+                },
+            )
+
+        client = _ensure_alias_client(report, clients_by_norm, chosen_alias)
+        return {
+            "client_proposed_id": client["proposed_id"],
+            "method": f"alias_{chosen_alias.source_field}",
+            "source_field": chosen_alias.source_field,
+            "source_value": chosen_alias.source_value,
+            "matched_value": matched_value,
+            "target_client_name": chosen_alias.target_client_name,
+            "alias_row_number": chosen_alias.row_number,
+            "warning": warning_reason,
+        }
+
+    return {
+        "client_proposed_id": None,
+        "method": "synthetic_unresolved_client",
+        "source_field": "client_id",
+        "source_value": raw_client_id,
+        "matched_value": raw_client_id,
+        "target_client_name": "Unknown client",
+        "alias_row_number": None,
+        "warning": "missing-or-unresolved-client-link",
+    }
+
+
 def _build_sites(
     report: dict[str, Any],
     source: SourceData,
     clients_by_norm: dict[str, dict[str, Any]],
+    alias_config: ClientAliasConfig,
 ) -> dict[str, dict[str, Any]]:
     sites_by_legacy_id: dict[str, dict[str, Any]] = {}
     sites_by_duplicate_key: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -710,12 +1212,8 @@ def _build_sites(
     for row_number, row in enumerate(sites_table.rows, start=1):
         legacy_id = _clean(_first(row, ("site_id", "id"))) or f"synthetic:site:row:{row_number}"
         row_key = legacy_id
-        raw_client_id = _clean(row.get("client_id"))
-        client_proposed_id = (
-            report["lookup_maps"]["client_legacy_id_to_proposed_id"].get(raw_client_id)
-            if raw_client_id
-            else None
-        )
+        resolution = _resolve_site_client(report, row, row_key, clients_by_norm, alias_config)
+        client_proposed_id = resolution["client_proposed_id"]
         if client_proposed_id is None:
             synthetic_client = _ensure_synthetic_client(
                 report,
@@ -726,7 +1224,7 @@ def _build_sites(
             orphan = {
                 "table": "crm_sites",
                 "row_key": row_key,
-                "client_id": raw_client_id,
+                "client_id": resolution["source_value"],
                 "synthetic_client_id": client_proposed_id,
             }
             report["orphans"]["sites"].append(orphan)
@@ -752,6 +1250,29 @@ def _build_sites(
                     "fallback_name": name,
                 },
             )
+        resolution_record = {
+            "table": "crm_sites",
+            "row_key": row_key,
+            "site_name": name,
+            "site_name_prefix": _site_name_prefix(name),
+            "managed_by": _clean(row.get("managed_by")),
+            "account": _clean(_first(row, ACCOUNT_FIELD_NAMES)),
+            "has_drive": _has_any_value(row, ("gdrive_url", "drive_folder_url", "drive_folder_id")),
+            "client_proposed_id": client_proposed_id,
+            "client_resolution_method": resolution["method"],
+            "client_resolution_source_value": resolution["source_value"],
+            "client_resolution_warning": resolution["warning"],
+            "client_resolution": {
+                "method": resolution["method"],
+                "source_field": resolution["source_field"],
+                "source_value": resolution["source_value"],
+                "matched_value": resolution["matched_value"],
+                "target_client_name": resolution["target_client_name"],
+                "alias_row_number": resolution["alias_row_number"],
+                "warning": resolution["warning"],
+            },
+        }
+        report.setdefault("_client_resolution_rows", []).append(resolution_record)
         city = _clean(row.get("city"))
         duplicate_key = (client_proposed_id, _normalize_key(name), _normalize_key(city))
         existing = sites_by_duplicate_key.get(duplicate_key)
@@ -831,6 +1352,9 @@ def _build_sites(
             "legacy_id": legacy_id,
             "legacy_source_table": "crm_sites",
             "alternate_legacy_ids": [],
+            "client_resolution_method": resolution["method"],
+            "client_resolution_source_value": resolution["source_value"],
+            "client_resolution": resolution_record["client_resolution"],
             "fields": {
                 "client_id": client_proposed_id,
                 "site_code": legacy_id if legacy_id.startswith("SSW-") else None,
@@ -847,6 +1371,8 @@ def _build_sites(
                 "drive_folder_id": drive_folder_id,
             },
         }
+        if resolution["warning"]:
+            proposed["client_resolution_warning"] = resolution["warning"]
         sites_by_legacy_id[legacy_id] = proposed
         sites_by_duplicate_key[duplicate_key] = proposed
         report["planned"]["sites"].append(proposed)
@@ -1117,18 +1643,30 @@ def build_migration_plan(
     *,
     organization_name: str = "Sterling Stormwater",
     verbose: bool = False,
+    client_aliases: str | Path | None = None,
 ) -> dict[str, Any]:
     report = _empty_report(source, organization_name)
     report["verbose"] = bool(verbose)
+    alias_config = (
+        read_client_aliases(client_aliases, source)
+        if client_aliases
+        else _empty_client_alias_config(source)
+    )
+    report["alias_summary"] = alias_config.summary
+    for warning in alias_config.warnings:
+        _append_alias_warning(report, warning)
     _record_missing_tables(report, source.missing_tables)
     clients_by_norm = _build_clients_and_contacts(report, source)
-    sites_by_legacy_id = _build_sites(report, source, clients_by_norm)
+    sites_by_legacy_id = _build_sites(report, source, clients_by_norm, alias_config)
     _build_jobs(report, source, clients_by_norm, sites_by_legacy_id)
 
     for table_name in ("clients", "contacts", "sites", "jobs"):
         report["planned_counts"][table_name] = len(report["planned"][table_name])
 
+    report["client_resolution_summary"] = _build_client_resolution_summary(report)
+    report["unresolved_site_samples"] = _build_unresolved_site_samples(report)
     report["diagnostics"] = _build_diagnostics(source, report)
+    report.pop("_client_resolution_rows", None)
     report["go_no_go"]["warning_count"] = _warning_count(report)
     report["go_no_go"]["error_count"] = len(report["errors"])
     if report["errors"]:
@@ -1148,9 +1686,15 @@ def run_dry_run(
     v1_db: str | Path,
     organization_name: str = "Sterling Stormwater",
     verbose: bool = False,
+    client_aliases: str | Path | None = None,
 ) -> dict[str, Any]:
     source = read_sqlite_source(v1_db)
-    return build_migration_plan(source, organization_name=organization_name, verbose=verbose)
+    return build_migration_plan(
+        source,
+        organization_name=organization_name,
+        verbose=verbose,
+        client_aliases=client_aliases,
+    )
 
 
 def _format_count_lines(counts: dict[str, int]) -> list[str]:
@@ -1196,6 +1740,102 @@ def _count_rows(rows: Sequence[dict[str, Any]], predicate) -> int:
     return sum(1 for row in rows if predicate(row))
 
 
+def _client_resolution_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    return list(report.get("_client_resolution_rows", []))
+
+
+def _build_unresolved_site_samples(report: dict[str, Any]) -> list[dict[str, Any]]:
+    samples = []
+    for row in _client_resolution_rows(report):
+        if row.get("client_resolution_method") != "synthetic_unresolved_client":
+            continue
+        samples.append(
+            {
+                "row_key": row.get("row_key"),
+                "site_name": row.get("site_name"),
+                "site_name_prefix": row.get("site_name_prefix"),
+                "managed_by": row.get("managed_by"),
+                "account": row.get("account"),
+                "has_drive": row.get("has_drive"),
+                "client_resolution_source_value": row.get("client_resolution_source_value"),
+                "client_resolution_warning": row.get("client_resolution_warning"),
+            },
+        )
+        if len(samples) >= UNRESOLVED_SITE_SAMPLE_LIMIT:
+            break
+    return samples
+
+
+def _build_client_resolution_summary(report: dict[str, Any]) -> dict[str, Any]:
+    rows = _client_resolution_rows(report)
+    method_counts = Counter(row.get("client_resolution_method") or "unknown" for row in rows)
+    client_by_id = {
+        client["proposed_id"]: client
+        for client in report.get("planned", {}).get("clients", [])
+    }
+    alias_site_counts = Counter(
+        row.get("client_proposed_id")
+        for row in rows
+        if (row.get("client_resolution_method") or "").startswith("alias_")
+    )
+    alias_client_groups = []
+    for proposed_id, site_count in alias_site_counts.most_common():
+        client = client_by_id.get(proposed_id)
+        if not client:
+            continue
+        alias_client_groups.append(
+            {
+                "target_client_name": client["fields"]["name"],
+                "target_client_status": client["fields"]["status"],
+                "proposed_id": proposed_id,
+                "resolved_site_rows": site_count,
+                "created_from_alias": client.get("legacy_source_table") == "client_aliases",
+            },
+        )
+
+    unresolved_prefix_counts = Counter(
+        row.get("site_name_prefix") or row.get("site_name") or "(missing site name)"
+        for row in rows
+        if row.get("client_resolution_method") == "synthetic_unresolved_client"
+    )
+    unresolved_name_counts = Counter(
+        row.get("site_name") or "(missing site name)"
+        for row in rows
+        if row.get("client_resolution_method") == "synthetic_unresolved_client"
+    )
+    multiple_alias_warnings = [
+        warning
+        for warning in report.get("alias_warnings", [])
+        if warning.get("reason") == "multiple-alias-matches"
+    ]
+    return {
+        "total_site_rows": len(rows),
+        "sites_resolved_direct_client_id": method_counts.get("direct_client_id", 0),
+        "sites_resolved_by_alias": sum(
+            count for method, count in method_counts.items() if method.startswith("alias_")
+        ),
+        "sites_unresolved_after_aliases": method_counts.get("synthetic_unresolved_client", 0),
+        "sites_with_multiple_alias_matches": len(multiple_alias_warnings),
+        "client_proposals_created_from_aliases": len(
+            [
+                client
+                for client in report.get("planned", {}).get("clients", [])
+                if client.get("legacy_source_table") == "client_aliases"
+            ],
+        ),
+        "by_method": dict(sorted(method_counts.items())),
+        "alias_client_groups": alias_client_groups,
+        "top_unresolved_site_prefixes": [
+            {"site_name_prefix": prefix, "site_rows": count}
+            for prefix, count in unresolved_prefix_counts.most_common(TOP_UNRESOLVED_PREFIX_LIMIT)
+        ],
+        "top_unresolved_site_names": [
+            {"site_name": name, "site_rows": count}
+            for name, count in unresolved_name_counts.most_common(TOP_UNRESOLVED_PREFIX_LIMIT)
+        ],
+    }
+
+
 def _build_site_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[str, Any]:
     sites_table = source.tables.get("crm_sites")
     site_rows = sites_table.rows if sites_table else []
@@ -1224,7 +1864,7 @@ def _build_site_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[
         client_id for client_id in distinct_client_ids if client_id not in client_lookup
     }
 
-    possible_client_text_fields = ("account", "client", "client_name", "company", "company_name")
+    possible_client_text_fields = ACCOUNT_FIELD_NAMES
     drive_fields = ("gdrive_url", "drive_folder_url", "drive_folder_id")
     field_presence = {
         "client_id": sites_with_client_id,
@@ -1440,6 +2080,8 @@ def _build_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[str, 
         "contacts": _build_contact_diagnostics(source, report),
         "sites": _build_site_diagnostics(source, report),
         "report_artifacts": _build_report_artifact_diagnostics(source, report),
+        "alias_summary": report.get("alias_summary", {}),
+        "client_resolution_summary": report.get("client_resolution_summary", {}),
     }
 
 
@@ -1475,6 +2117,71 @@ def _format_grouping_clues(grouping_clues: dict[str, dict[str, Any]]) -> list[st
     )
 
 
+def _format_alias_client_groups(summary: dict[str, Any]) -> list[str]:
+    return _markdown_table(
+        ("Target Client", "Status", "Resolved Site Rows", "Created From Alias"),
+        [
+            (
+                group.get("target_client_name"),
+                group.get("target_client_status"),
+                group.get("resolved_site_rows"),
+                group.get("created_from_alias"),
+            )
+            for group in summary.get("alias_client_groups", [])[:25]
+        ],
+    )
+
+
+def _format_top_unresolved_prefixes(summary: dict[str, Any]) -> list[str]:
+    return _markdown_table(
+        ("Site Name / Prefix", "Rows"),
+        [
+            (item.get("site_name_prefix"), item.get("site_rows"))
+            for item in summary.get("top_unresolved_site_prefixes", [])
+        ],
+    )
+
+
+def _format_unresolved_site_samples(samples: Sequence[dict[str, Any]]) -> list[str]:
+    return _markdown_table(
+        ("Row", "Site Name", "Prefix", "Managed By", "Account", "Drive"),
+        [
+            (
+                sample.get("row_key"),
+                sample.get("site_name"),
+                sample.get("site_name_prefix"),
+                sample.get("managed_by"),
+                sample.get("account"),
+                sample.get("has_drive"),
+            )
+            for sample in samples
+        ],
+    )
+
+
+def _alias_warning_lines(report: dict[str, Any], *, limit: int = 25) -> list[str]:
+    warnings = report.get("alias_warnings", [])
+    if not warnings:
+        return ["- None"]
+    lines = []
+    for warning in warnings[:limit]:
+        row_key = warning.get("row_key") or warning.get("table") or "n/a"
+        reason = warning.get("reason") or "warning"
+        detail = (
+            warning.get("message")
+            or warning.get("source_field")
+            or warning.get("selected_target_client_name")
+            or warning.get("target_client_name")
+            or ""
+        )
+        suffix = f" - {detail}" if detail else ""
+        lines.append(f"- {row_key}: {reason}{suffix}")
+    remaining = len(warnings) - limit
+    if remaining > 0:
+        lines.append(f"- ... {remaining} additional alias warnings omitted from markdown.")
+    return lines
+
+
 def _warning_lines(report: dict[str, Any], category: str) -> list[str]:
     warnings = report["warnings"].get(category, [])
     if not warnings:
@@ -1495,6 +2202,8 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     contact_diagnostics = diagnostics.get("contacts", {})
     site_diagnostics = diagnostics.get("sites", {})
     report_artifact_diagnostics = diagnostics.get("report_artifacts", {})
+    alias_summary = report.get("alias_summary", {})
+    client_resolution_summary = report.get("client_resolution_summary", {})
     sections = [
         "# V1 to V2 Migration M1 Dry-Run Report",
         "",
@@ -1507,7 +2216,43 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "## 3. Source Row Counts",
         *_format_count_lines(report["source_row_counts"]),
         "",
-        "## 4. Diagnostic Summary",
+        "## 4. Alias Mapping Summary",
+        *_format_diagnostic_counts(
+            {
+                "Alias mapping file path": alias_summary.get("file_path") or "(not provided)",
+                "Alias rows loaded": alias_summary.get("rows_loaded", 0),
+                "Alias rows valid": alias_summary.get("rows_valid", 0),
+                "Alias rows invalid": alias_summary.get("rows_invalid", 0),
+                "Unsupported source_field rows": alias_summary.get("unsupported_source_field_rows", 0),
+                "Sites resolved by alias": client_resolution_summary.get("sites_resolved_by_alias", 0),
+                "Sites unresolved after aliases": client_resolution_summary.get(
+                    "sites_unresolved_after_aliases",
+                    0,
+                ),
+                "Sites with multiple alias matches": client_resolution_summary.get(
+                    "sites_with_multiple_alias_matches",
+                    0,
+                ),
+                "Client proposals created from aliases": client_resolution_summary.get(
+                    "client_proposals_created_from_aliases",
+                    0,
+                ),
+            },
+        ),
+        "",
+        "### Client Resolution Methods",
+        *_format_diagnostic_counts(client_resolution_summary.get("by_method", {})),
+        "",
+        "### Alias Client Groups",
+        *_format_alias_client_groups(client_resolution_summary),
+        "",
+        "### Top Unresolved Site Names / Prefixes",
+        *_format_top_unresolved_prefixes(client_resolution_summary),
+        "",
+        "### Alias Warnings",
+        *_alias_warning_lines(report),
+        "",
+        "## 5. Diagnostic Summary",
         "### Contact Client Clues",
         *_format_diagnostic_counts(contact_diagnostics),
         "",
@@ -1533,68 +2278,46 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         *_format_diagnostic_counts(diagnostics.get("warning_counts", {})),
         "",
         "### Sanitized Unresolved Site Samples",
-        *_markdown_table(
-            (
-                "Row",
-                "Client ID",
-                "Managed By",
-                "Prefix",
-                "City/State",
-                "Drive",
-                "Systems",
-            ),
-            [
-                (
-                    sample.get("row_key"),
-                    sample.get("client_id_status"),
-                    sample.get("has_managed_by"),
-                    sample.get("has_site_name_prefix"),
-                    sample.get("has_city_state"),
-                    sample.get("has_drive"),
-                    sample.get("has_systems"),
-                )
-                for sample in site_diagnostics.get("sample_unresolved_sites", [])
-            ],
-        ),
+        *_format_unresolved_site_samples(report.get("unresolved_site_samples", [])),
         "",
-        "## 5. Planned Clients",
+        "## 6. Planned Clients",
         f"- Would create/update: {report['planned_counts']['clients']}",
         "",
-        "## 6. Planned Contacts",
+        "## 7. Planned Contacts",
         f"- Would create/update: {report['planned_counts']['contacts']}",
         "",
-        "## 7. Planned Sites",
+        "## 8. Planned Sites",
         f"- Would create/update: {report['planned_counts']['sites']}",
         "",
-        "## 8. Planned Jobs",
+        "## 9. Planned Jobs",
         f"- Would create/update: {report['planned_counts']['jobs']}",
         "",
-        "## 9. Relationship Warnings",
+        "## 10. Relationship Warnings",
         *_warning_lines(report, "relationship"),
         "",
-        "## 10. Duplicate Warnings",
+        "## 11. Duplicate Warnings",
         *_warning_lines(report, "duplicates"),
         "",
-        "## 11. Status Mapping Warnings",
+        "## 12. Status Mapping Warnings",
         *_warning_lines(report, "status_mapping"),
         "",
-        "## 12. Date Parsing Warnings",
+        "## 13. Date Parsing Warnings",
         *_warning_lines(report, "date_parsing"),
         "",
-        "## 13. Drive URL Warnings",
+        "## 14. Drive URL Warnings",
         *_warning_lines(report, "drive_urls"),
         "",
-        "## 14. Orphan Records",
+        "## 15. Orphan Records",
         f"- Sites: {len(report['orphans']['sites'])}",
         f"- Jobs: {len(report['orphans']['jobs'])}",
         "",
-        "## 15. Deferred Records",
+        "## 16. Deferred Records",
         f"- Leads: {deferred['leads']}",
         f"- Reports: {deferred['reports']}",
         f"- Photos/files: {deferred['photos_files']}",
         f"- Communications: {deferred['communications']}",
         "",
-        "## 16. Final Go/No-Go Summary",
+        "## 17. Final Go/No-Go Summary",
         f"- Status: {report['go_no_go']['status']}",
         f"- Warnings: {report['go_no_go']['warning_count']}",
         f"- Errors: {report['go_no_go']['error_count']}",
@@ -1654,6 +2377,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--verbose", action="store_true", help="Include verbose report metadata.")
     parser.add_argument("--output-json", help="Optional path for structured JSON report.")
     parser.add_argument("--output-md", help="Optional path for markdown report.")
+    parser.add_argument(
+        "--client-aliases",
+        help="Optional read-only CSV mapping file for deterministic site-to-client alias resolution.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1671,6 +2398,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             v1_db=args.v1_db,
             organization_name=args.organization_name,
             verbose=args.verbose,
+            client_aliases=args.client_aliases,
         )
         write_report_outputs(
             report,

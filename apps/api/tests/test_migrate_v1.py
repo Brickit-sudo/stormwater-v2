@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from scripts import migrate_v1
 
@@ -220,6 +222,153 @@ def _create_v1_fixture(path: Path, *, include_optional: bool = True) -> Path:
     return path
 
 
+def _create_alias_fixture(path: Path, site_rows: list[dict[str, Any]] | None = None) -> Path:
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE crm_contacts (
+            client_id TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            email TEXT,
+            phone TEXT,
+            sites_managed TEXT,
+            managed_by TEXT,
+            active_status TEXT,
+            account TEXT,
+            state TEXT,
+            notes TEXT
+        );
+
+        CREATE TABLE crm_sites (
+            site_id TEXT,
+            name TEXT,
+            address TEXT,
+            city TEXT,
+            state TEXT,
+            zip TEXT,
+            contact TEXT,
+            client_id TEXT,
+            email TEXT,
+            phone TEXT,
+            gdrive_url TEXT,
+            status TEXT,
+            notes TEXT,
+            lat REAL,
+            lng REAL,
+            drive_folder_id TEXT,
+            last_inspection_date TEXT,
+            next_service_date TEXT,
+            contract_start TEXT,
+            contract_end TEXT,
+            submittal_due_date TEXT,
+            account TEXT,
+            managed_by TEXT,
+            drive_parent_folder TEXT
+        );
+
+        CREATE TABLE crm_jobs (
+            job_id TEXT,
+            job_site TEXT,
+            location TEXT,
+            job_status TEXT,
+            service TEXT,
+            scope TEXT,
+            scheduled_date TEXT,
+            site_id TEXT,
+            client_id TEXT,
+            gdrive_url TEXT,
+            notes TEXT,
+            completed_date TEXT,
+            internal_due_date TEXT,
+            next_action_date TEXT,
+            completion_notes TEXT,
+            blocked_reason TEXT,
+            owner TEXT,
+            report_id TEXT
+        );
+
+        CREATE TABLE crm_leads (lead_id TEXT, name TEXT);
+        CREATE TABLE crm_communications (comm_id TEXT, entity_type TEXT, entity_id TEXT);
+        CREATE TABLE crm_report_artifacts (artifact_id TEXT, file_path TEXT);
+        """
+    )
+    defaults = {
+        "site_id": "SSW-ALIAS-1",
+        "name": "Alias Test Site",
+        "address": "1 Alias Way",
+        "city": "Portland",
+        "state": "ME",
+        "zip": "04101",
+        "contact": "",
+        "client_id": "",
+        "email": "",
+        "phone": "",
+        "gdrive_url": "https://drive.google.com/drive/folders/1AliasFolder",
+        "status": "active",
+        "notes": "",
+        "lat": None,
+        "lng": None,
+        "drive_folder_id": "",
+        "last_inspection_date": "",
+        "next_service_date": "",
+        "contract_start": "",
+        "contract_end": "",
+        "submittal_due_date": "",
+        "account": "",
+        "managed_by": "",
+        "drive_parent_folder": "",
+    }
+    rows = site_rows or [defaults]
+    prepared_rows = []
+    for row in rows:
+        merged = {**defaults, **row}
+        prepared_rows.append(tuple(merged[name] for name in defaults))
+    conn.executemany(
+        """
+        INSERT INTO crm_sites VALUES (
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+        )
+        """,
+        prepared_rows,
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def _write_aliases(path: Path, rows: list[dict[str, Any]]) -> Path:
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=[
+                "source_value",
+                "source_field",
+                "target_client_name",
+                "target_client_status",
+                "notes",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def _alias_row(
+    source_value: str,
+    source_field: str,
+    target_client_name: str = "Mapped Client",
+    target_client_status: str = "active",
+) -> dict[str, str]:
+    return {
+        "source_value": source_value,
+        "source_field": source_field,
+        "target_client_name": target_client_name,
+        "target_client_status": target_client_status,
+        "notes": "Test alias only",
+    }
+
+
 def test_script_imports_cleanly() -> None:
     assert migrate_v1.REPORT_SCHEMA_VERSION == "m1-dry-run-v2"
 
@@ -343,6 +492,222 @@ def test_dry_run_does_not_require_or_write_v2_database(tmp_path: Path, monkeypat
     assert report["organization"]["name"] == "Sterling Stormwater"
 
 
+def test_no_alias_file_preserves_old_behavior(tmp_path: Path) -> None:
+    db_path = _create_v1_fixture(tmp_path / "v1.sqlite")
+
+    report = migrate_v1.run_dry_run(v1_db=db_path, organization_name="Sterling Stormwater")
+    site = next(site for site in report["planned"]["sites"] if site["legacy_id"] == "SSW-0001")
+
+    assert report["alias_summary"]["provided"] is False
+    assert report["alias_summary"]["rows_loaded"] == 0
+    assert report["planned_counts"] == {
+        "clients": 2,
+        "contacts": 3,
+        "jobs": 2,
+        "sites": 2,
+    }
+    assert site["client_resolution_method"] == "direct_client_id"
+
+
+def test_alias_file_loads_valid_rows(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
+    source = migrate_v1.read_sqlite_source(db_path)
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Alias Test", "site_name_prefix", "Alias Owner")],
+    )
+
+    config = migrate_v1.read_client_aliases(alias_path, source)
+
+    assert config.summary["rows_loaded"] == 1
+    assert config.summary["rows_valid"] == 1
+    assert config.aliases[0].target_client_name == "Alias Owner"
+
+
+def test_invalid_alias_row_produces_warning(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
+    source = migrate_v1.read_sqlite_source(db_path)
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("", "site_name_exact", "Alias Owner")],
+    )
+
+    config = migrate_v1.read_client_aliases(alias_path, source)
+
+    assert config.summary["rows_invalid"] == 1
+    assert any(warning["reason"] == "invalid-alias-row" for warning in config.warnings)
+
+
+def test_unsupported_alias_source_field_produces_warning(tmp_path: Path) -> None:
+    db_path = _create_v1_fixture(tmp_path / "v1.sqlite")
+    source = migrate_v1.read_sqlite_source(db_path)
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Parent Folder", "drive_parent_folder", "Alias Owner")],
+    )
+
+    config = migrate_v1.read_client_aliases(alias_path, source)
+
+    assert config.summary["unsupported_source_field_rows"] == 1
+    assert any(warning["reason"] == "unsupported-source-field" for warning in config.warnings)
+
+
+def test_site_name_exact_alias_resolves_client(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-EXACT", "name": "Exact Match Site"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Exact Match Site", "site_name_exact", "Exact Client")],
+    )
+
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+    site = next(site for site in report["planned"]["sites"] if site["legacy_id"] == "SSW-EXACT")
+    client = next(client for client in report["planned"]["clients"] if client["fields"]["name"] == "Exact Client")
+
+    assert site["fields"]["client_id"] == client["proposed_id"]
+    assert site["client_resolution_method"] == "alias_site_name_exact"
+    assert report["client_resolution_summary"]["sites_resolved_by_alias"] == 1
+    assert report["client_resolution_summary"]["sites_unresolved_after_aliases"] == 0
+
+
+def test_site_name_prefix_alias_resolves_client(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-PREFIX", "name": "Long Creek Basin 1"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Long Creek", "site_name_prefix", "Long Creek Client")],
+    )
+
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+    site = next(site for site in report["planned"]["sites"] if site["legacy_id"] == "SSW-PREFIX")
+
+    assert site["client_resolution_method"] == "alias_site_name_prefix"
+    assert site["client_resolution_source_value"] == "Long Creek"
+
+
+def test_site_name_contains_alias_resolves_client(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-CONTAINS", "name": "North Retail Pond"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Retail", "site_name_contains", "Retail Client")],
+    )
+
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+    site = next(site for site in report["planned"]["sites"] if site["legacy_id"] == "SSW-CONTAINS")
+
+    assert site["client_resolution_method"] == "alias_site_name_contains"
+
+
+def test_account_alias_resolves_client_when_source_field_exists(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-ACCOUNT", "name": "Account Site", "account": "Portfolio Account"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Portfolio Account", "account", "Portfolio Client")],
+    )
+
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+    site = next(site for site in report["planned"]["sites"] if site["legacy_id"] == "SSW-ACCOUNT")
+
+    assert site["client_resolution_method"] == "alias_account"
+
+
+def test_managed_by_alias_resolves_client_when_source_field_exists(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-MANAGED", "name": "Managed Site", "managed_by": "Demo Manager"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Demo Manager", "managed_by", "Managed Client")],
+    )
+
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+    site = next(site for site in report["planned"]["sites"] if site["legacy_id"] == "SSW-MANAGED")
+
+    assert site["client_resolution_method"] == "alias_managed_by"
+
+
+def test_multiple_alias_matches_selects_priority_and_warns(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-PRIORITY", "name": "Priority Site"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [
+            _alias_row("Priority", "site_name_contains", "Contains Client"),
+            _alias_row("Priority Site", "site_name_exact", "Exact Priority Client"),
+        ],
+    )
+
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+    site = next(site for site in report["planned"]["sites"] if site["legacy_id"] == "SSW-PRIORITY")
+    selected_client = next(
+        client
+        for client in report["planned"]["clients"]
+        if client["proposed_id"] == site["fields"]["client_id"]
+    )
+
+    assert selected_client["fields"]["name"] == "Exact Priority Client"
+    assert site["client_resolution_warning"] == "multiple-alias-matches"
+    assert any(warning["reason"] == "multiple-alias-matches" for warning in report["alias_warnings"])
+
+
+def test_invalid_alias_target_client_status_warns_and_defaults(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-STATUS", "name": "Status Site"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Status Site", "site_name_exact", "Status Client", "not-real")],
+    )
+
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+    client = next(client for client in report["planned"]["clients"] if client["fields"]["name"] == "Status Client")
+
+    assert client["fields"]["status"] == "active"
+    assert any(warning["reason"] == "invalid-target-client-status" for warning in report["alias_warnings"])
+
+
 def test_json_report_shape_is_stable(tmp_path: Path) -> None:
     db_path = _create_v1_fixture(tmp_path / "v1.sqlite")
     output_path = tmp_path / "migration-report.json"
@@ -352,6 +717,9 @@ def test_json_report_shape_is_stable(tmp_path: Path) -> None:
     saved = json.loads(output_path.read_text(encoding="utf-8"))
 
     assert list(saved.keys()) == [
+        "alias_summary",
+        "alias_warnings",
+        "client_resolution_summary",
         "deferred",
         "diagnostics",
         "errors",
@@ -368,6 +736,7 @@ def test_json_report_shape_is_stable(tmp_path: Path) -> None:
         "source_database",
         "source_row_counts",
         "tables_found",
+        "unresolved_site_samples",
         "verbose",
         "warnings",
     ]
@@ -377,6 +746,61 @@ def test_json_report_shape_is_stable(tmp_path: Path) -> None:
         "jobs": 2,
         "sites": 2,
     }
+
+
+def test_json_report_includes_alias_summary(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-JSON", "name": "JSON Alias Site"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("JSON Alias Site", "site_name_exact", "JSON Client")],
+    )
+    output_path = tmp_path / "migration-report.json"
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+
+    migrate_v1.write_report_outputs(report, output_json=output_path)
+    saved = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert saved["alias_summary"]["rows_valid"] == 1
+    assert saved["client_resolution_summary"]["sites_resolved_by_alias"] == 1
+    assert saved["unresolved_site_samples"] == []
+
+
+def test_markdown_report_includes_alias_summary(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-MD", "name": "Markdown Alias Site"}],
+    )
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Markdown Alias Site", "site_name_exact", "Markdown Client")],
+    )
+    report = migrate_v1.run_dry_run(
+        v1_db=db_path,
+        organization_name="Sterling Stormwater",
+        client_aliases=alias_path,
+    )
+
+    markdown = migrate_v1.render_markdown_report(report)
+
+    assert "## 4. Alias Mapping Summary" in markdown
+    assert "Alias rows valid" in markdown
+    assert "Markdown Client" in markdown
+
+
+def test_private_mapping_file_is_not_required_for_tests(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
+
+    report = migrate_v1.run_dry_run(v1_db=db_path, organization_name="Sterling Stormwater")
+
+    assert report["alias_summary"]["provided"] is False
+    assert report["alias_warnings"] == []
 
 
 def test_diagnostics_explain_site_client_relationships(tmp_path: Path) -> None:

@@ -140,7 +140,7 @@ Avoid fuzzy matching as default M2 behavior. Fuzzy scores may be useful as revie
 
 ## 11. Proposed Manual Mapping File Strategy
 
-Add support in a future M1/M1.5 pass for a mapping file like:
+M1.6 adds dry-run support for a mapping file like:
 
 `apps/api/migration_maps/client_aliases.example.csv`
 
@@ -155,6 +155,15 @@ Columns:
 | `notes` | Human explanation, ticket, or review context. |
 
 The real `client_aliases.csv` should not be committed if it contains private client data. Commit only an example template with fake rows.
+
+Run the alias-supported dry-run with:
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --client-aliases "PATH\TO\client_aliases.csv" --output-md migration-report.md
+```
+
+The dry-run reports alias rows loaded/valid/invalid, unsupported `source_field` rows, sites resolved by alias, sites still unresolved, multiple-match conflicts, alias-created client proposals, and limited unresolved site samples/prefixes for manual review. Supported deterministic resolver fields are `client_id`, `account`, `managed_by`, `site_name_exact`, `site_name_prefix`, `site_name_contains`, and `drive_parent_folder` when an explicit parent-folder field exists in V1. City/state and fuzzy matching are not resolver inputs.
 
 ## 12. Open Decisions for Bryce
 
@@ -175,4 +184,3 @@ The real `client_aliases.csv` should not be committed if it contains private cli
 - No report/photo migration added to M2.
 - No V2 Postgres writes occur until apply mode is intentionally implemented and reviewed.
 - Full API, web, and core checks pass after resolver changes.
-

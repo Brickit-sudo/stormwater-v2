@@ -116,6 +116,25 @@ cd apps\api
 
 Optional JSON output is available with `--output-json migration-report.json`. `--apply` is accepted only to make the future CLI shape explicit; in M1 it exits with a not-implemented message and does not write anything.
 
+### Client Alias Mapping
+
+M1.6 can read an optional, private client alias CSV to deterministically resolve V1 site rows to proposed V2 clients before any apply migration exists.
+
+Start from the fake template:
+
+```powershell
+copy apps\api\migration_maps\client_aliases.example.csv apps\api\migration_maps\client_aliases.csv
+```
+
+Edit `client_aliases.csv` locally with reviewed real mappings. Do not commit real client names or private mapping files; `client_aliases.csv`, `*real*.csv`, `*private*.csv`, `migration_maps\generated\`, and `migration_reports\` are ignored.
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --client-aliases "PATH\TO\client_aliases.csv" --output-md migration-report.md
+```
+
+Supported deterministic `source_field` values are `client_id`, `account`, `managed_by`, `site_name_exact`, `site_name_prefix`, `site_name_contains`, and `drive_parent_folder`. `drive_parent_folder` only resolves when the V1 site table has an explicit parent-folder field; the dry-run does not infer client ownership from city/state or from a site folder URL alone.
+
 ## Current Endpoints
 
 - `GET /health`

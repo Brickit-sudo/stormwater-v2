@@ -455,6 +455,11 @@ existing `seed_dev.py`, to share the V2 SQLAlchemy session setup).
   to be a demo-named organization.
 - `--verbose` — debug-level logging of every row processed.
 
+- `--client-aliases PATH` - optional M1.6 dry-run input for a private,
+  reviewed CSV of deterministic site-to-client aliases. The script reads
+  this file only and never writes back to it. Real mapping files must not
+  be committed.
+
 ### Safety rules
 
 - Default behavior is dry-run. The script must refuse to write without

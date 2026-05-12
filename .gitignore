@@ -28,3 +28,10 @@ Thumbs.db
 
 # Local dev logs
 *.log
+
+# V1 migration private/generated artifacts
+apps/api/migration_maps/client_aliases.csv
+apps/api/migration_maps/*real*.csv
+apps/api/migration_maps/*private*.csv
+apps/api/migration_maps/generated/
+apps/api/migration_reports/

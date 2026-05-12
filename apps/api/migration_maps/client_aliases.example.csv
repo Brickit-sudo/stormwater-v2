@@ -1,4 +1,7 @@
 source_value,source_field,target_client_name,target_client_status,notes
-"Example Portfolio","site_name_prefix","Example Portfolio Client","active","Example only"
-"Example Manager","managed_by","Example Managed Client","active","Example only"
-"Example Parent Folder","drive_parent_folder","Example Drive Client","inactive","Example only"
+"Demo Creek","site_name_prefix","Demo Creek Watershed District","active","Example prefix: matches sites beginning with Demo Creek"
+"Retail Pond","site_name_contains","Example Retail Portfolio LLC","active","Example contains match for reviewed site names"
+"Demo Industrial Park - BMP 1","site_name_exact","Demo Industrial Park Owners Association","active","Example exact site-name match"
+"Example Portfolio Account","account","Example Portfolio Management LLC","active","Example account field match when V1 site rows include account/client text"
+"Example Property Manager","managed_by","Example Managed Sites Client","active","Example managed_by match after human review"
+"Example Parent Folder","drive_parent_folder","Example Drive Parent Client","inactive","Example only; requires explicit V1 parent folder field"
