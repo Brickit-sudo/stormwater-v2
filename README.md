@@ -188,6 +188,15 @@ cd apps\api
 
 The seed script creates one deterministic organization, three clients, five sites, and eight jobs, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only rows marked `legacy_source='seed_dev'` for the demo organization before reseeding.
 
+V1 CRM migration Phase M1 is dry-run only. It inspects the V1 SQLite CRM data and writes no V2 database rows:
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --output-md migration-report.md
+```
+
+`--apply` is intentionally blocked until the M2 apply phase.
+
 Example:
 
 ```powershell

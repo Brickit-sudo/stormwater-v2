@@ -105,6 +105,17 @@ With the API running, verify the seeded CRM HTTP surface:
 
 The route tests use an in-memory SQLite engine for only the CRM tables under test, so normal smoke tests do not require local Postgres. `alembic upgrade head` still requires a reachable Postgres database.
 
+## V1 CRM Migration Dry-Run
+
+Phase M1 is a read-only planning pass for the V1 SQLite CRM tables. It reads V1 `crm_contacts`, `crm_sites`, `crm_jobs`, and optional deferred tables, then prints what V2 clients, contacts, sites, and jobs would be created or updated. It does not connect to V2 Postgres and performs no writes.
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --output-md migration-report.md
+```
+
+Optional JSON output is available with `--output-json migration-report.json`. `--apply` is accepted only to make the future CLI shape explicit; in M1 it exits with a not-implemented message and does not write anything.
+
 ## Current Endpoints
 
 - `GET /health`
