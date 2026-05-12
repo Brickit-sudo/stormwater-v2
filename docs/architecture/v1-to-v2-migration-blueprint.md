@@ -459,6 +459,9 @@ existing `seed_dev.py`, to share the V2 SQLAlchemy session setup).
   reviewed CSV of deterministic site-to-client aliases. The script reads
   this file only and never writes back to it. Real mapping files must not
   be committed.
+- `--write-alias-draft PATH` - optional M1.7 dry-run output that writes a
+  private draft alias CSV from unresolved site diagnostics. Existing files
+  are not overwritten unless `--force` is supplied.
 
 ### Safety rules
 
@@ -557,6 +560,16 @@ worktree). Sections:
   number resolvable to a job, number with missing photos on disk.
 - **Final go/no-go summary** — an explicit `OK` or `NEEDS REVIEW` line
   based on whether any `error`-severity conflict was logged.
+
+- **Alias validation summary** - alias file used, rows loaded/valid/invalid,
+  blank required fields, duplicate aliases, unsupported `source_field`
+  values, aliases matching no V1 sites, aliases matching multiple V2
+  client proposals, alias-created client proposals, unresolved sites
+  remaining, top unresolved prefixes, and recommended alias rows to add.
+- **M2 apply gate** - explicit `Safe to proceed to M2 apply?` answer. It is
+  `No` while `--apply` remains blocked, when unresolved sites exceed the
+  configured threshold, when invalid/unsupported alias rows exist, or when
+  multiple-match warnings exist.
 
 ## Test Plan
 

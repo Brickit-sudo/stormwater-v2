@@ -126,14 +126,25 @@ Start from the fake template:
 copy apps\api\migration_maps\client_aliases.example.csv apps\api\migration_maps\client_aliases.csv
 ```
 
-Edit `client_aliases.csv` locally with reviewed real mappings. Do not commit real client names or private mapping files; `client_aliases.csv`, `*real*.csv`, `*private*.csv`, `migration_maps\generated\`, and `migration_reports\` are ignored.
+Edit `client_aliases.csv` locally with reviewed real mappings. Do not commit real client names or private mapping files; all CSVs under `migration_maps\` are ignored except `client_aliases.example.csv`. Generated `migration*.json`, `migration*.md`, `migration_reports\`, and `reports\migration\` outputs are also ignored.
+
+To draft a private alias map from unresolved dry-run diagnostics:
 
 ```powershell
 cd apps\api
-.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --client-aliases "PATH\TO\client_aliases.csv" --output-md migration-report.md
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --output-json migration-dry-run.json --output-md migration-report.md --write-alias-draft migration_maps\client_aliases.draft.csv
 ```
 
-Supported deterministic `source_field` values are `client_id`, `account`, `managed_by`, `site_name_exact`, `site_name_prefix`, `site_name_contains`, and `drive_parent_folder`. `drive_parent_folder` only resolves when the V1 site table has an explicit parent-folder field; the dry-run does not infer client ownership from city/state or from a site folder URL alone.
+The draft contains private V1 site clues and leaves `target_client_name` blank for human review. It will not overwrite an existing draft unless `--force` is supplied.
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --client-aliases migration_maps\client_aliases.csv --output-json migration-alias-dry-run.json --output-md migration-alias-report.md
+```
+
+The alias dry-run validates total/valid/invalid rows, blank required fields, unsupported `source_field` values, duplicate aliases, aliases that match no V1 sites, aliases that match multiple proposed clients, alias-created client proposals, and unresolved sites remaining after aliases.
+
+Supported deterministic `source_field` values are `client_id`, `account`, `managed_by`, `site_name_exact`, `site_name_prefix`, `site_name_contains`, and `drive_parent_folder`. `drive_parent_folder` only resolves when the V1 site table has an explicit parent-folder field; the dry-run does not infer client ownership from city/state or from a site folder URL alone. `--apply` remains blocked in M1 even when aliases are supplied.
 
 ## Current Endpoints
 

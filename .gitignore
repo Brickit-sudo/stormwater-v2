@@ -30,8 +30,13 @@ Thumbs.db
 *.log
 
 # V1 migration private/generated artifacts
-apps/api/migration_maps/client_aliases.csv
-apps/api/migration_maps/*real*.csv
-apps/api/migration_maps/*private*.csv
+apps/api/migration_maps/*.csv
+!apps/api/migration_maps/client_aliases.example.csv
 apps/api/migration_maps/generated/
 apps/api/migration_reports/
+apps/api/reports/migration/
+apps/api/migration*.json
+apps/api/migration*.md
+apps/api/*dry-run*.json
+apps/api/*dry-run*.md
+apps/api/*private*

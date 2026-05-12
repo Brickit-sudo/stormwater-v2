@@ -70,6 +70,20 @@ DRIVE_PARENT_FIELD_NAMES = (
 )
 UNRESOLVED_SITE_SAMPLE_LIMIT = 10
 TOP_UNRESOLVED_PREFIX_LIMIT = 10
+ALIAS_DRAFT_SAMPLE_LIMIT = 5
+ALIAS_DRAFT_ROW_LIMIT = 200
+M2_UNRESOLVED_SITE_THRESHOLD = 0
+ALIAS_DRAFT_COLUMNS = (
+    "source_value",
+    "source_field",
+    "target_client_name",
+    "target_client_status",
+    "notes",
+    "review_status",
+    "match_count",
+    "sample_site_names",
+    "sample_row_keys",
+)
 
 
 @dataclass(frozen=True)
@@ -206,7 +220,13 @@ def _empty_client_alias_config(source: SourceData, path: str | Path | None = Non
             "rows_loaded": 0,
             "rows_valid": 0,
             "rows_invalid": 0,
+            "blank_required_field_rows": 0,
+            "unknown_source_field_rows": 0,
             "unsupported_source_field_rows": 0,
+            "duplicate_alias_rows": 0,
+            "aliases_matching_no_v1_sites": 0,
+            "aliases_matching_multiple_client_proposals": 0,
+            "aliases_creating_new_client_proposals": 0,
             "supported_source_fields": supported_fields,
             "unsupported_source_fields": [
                 field for field in CLIENT_ALIAS_SOURCE_FIELDS if field not in supported_fields
@@ -229,6 +249,10 @@ def read_client_aliases(path: str | Path, source: SourceData) -> ClientAliasConf
     rows_loaded = 0
     rows_invalid = 0
     unsupported_rows = 0
+    unknown_source_field_rows = 0
+    blank_required_field_rows = 0
+    duplicate_alias_rows = 0
+    seen_alias_keys: dict[tuple[str, str], int] = {}
 
     with alias_path.open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
@@ -273,6 +297,7 @@ def read_client_aliases(path: str | Path, source: SourceData) -> ClientAliasConf
             ]
             if missing_values:
                 rows_invalid += 1
+                blank_required_field_rows += 1
                 warnings.append(
                     {
                         "table": "client_aliases",
@@ -285,6 +310,7 @@ def read_client_aliases(path: str | Path, source: SourceData) -> ClientAliasConf
 
             if source_field not in CLIENT_ALIAS_SOURCE_FIELDS:
                 rows_invalid += 1
+                unknown_source_field_rows += 1
                 warnings.append(
                     {
                         "table": "client_aliases",
@@ -297,6 +323,7 @@ def read_client_aliases(path: str | Path, source: SourceData) -> ClientAliasConf
                 continue
 
             if source_field not in supported_fields:
+                rows_invalid += 1
                 unsupported_rows += 1
                 warnings.append(
                     {
@@ -311,6 +338,24 @@ def read_client_aliases(path: str | Path, source: SourceData) -> ClientAliasConf
                     },
                 )
                 continue
+
+            alias_key = (source_field, _normalize_key(source_value))
+            first_row_number = seen_alias_keys.get(alias_key)
+            if first_row_number is not None:
+                rows_invalid += 1
+                duplicate_alias_rows += 1
+                warnings.append(
+                    {
+                        "table": "client_aliases",
+                        "row_key": f"row:{row_number}",
+                        "reason": "duplicate-alias-row",
+                        "source_field": source_field,
+                        "source_value": source_value,
+                        "first_row": first_row_number,
+                    },
+                )
+                continue
+            seen_alias_keys[alias_key] = row_number
 
             raw_status = (cleaned.get("target_client_status") or "").lower()
             if raw_status in CLIENT_ALIAS_CLIENT_STATUSES:
@@ -349,7 +394,13 @@ def read_client_aliases(path: str | Path, source: SourceData) -> ClientAliasConf
             "rows_loaded": rows_loaded,
             "rows_valid": len(aliases),
             "rows_invalid": rows_invalid,
+            "blank_required_field_rows": blank_required_field_rows,
+            "unknown_source_field_rows": unknown_source_field_rows,
             "unsupported_source_field_rows": unsupported_rows,
+            "duplicate_alias_rows": duplicate_alias_rows,
+            "aliases_matching_no_v1_sites": 0,
+            "aliases_matching_multiple_client_proposals": 0,
+            "aliases_creating_new_client_proposals": 0,
             "supported_source_fields": _supportable_alias_source_fields(source),
             "unsupported_source_fields": [
                 field for field in CLIENT_ALIAS_SOURCE_FIELDS if field not in supported_fields
@@ -630,6 +681,7 @@ def _empty_report(source: SourceData, organization_name: str) -> dict[str, Any]:
         },
         "alias_summary": {},
         "alias_warnings": [],
+        "alias_draft_recommendations": [],
         "client_resolution_summary": {},
         "unresolved_site_samples": [],
         "orphans": {
@@ -649,6 +701,11 @@ def _empty_report(source: SourceData, organization_name: str) -> dict[str, Any]:
             "warning_count": 0,
             "error_count": 0,
             "summary": "Dry-run plan is ready for review.",
+        },
+        "m2_apply_gate": {
+            "safe_to_proceed": False,
+            "unresolved_site_threshold": M2_UNRESOLVED_SITE_THRESHOLD,
+            "reasons": ["--apply is intentionally blocked until M2."],
         },
     }
 
@@ -1257,6 +1314,7 @@ def _build_sites(
             "site_name_prefix": _site_name_prefix(name),
             "managed_by": _clean(row.get("managed_by")),
             "account": _clean(_first(row, ACCOUNT_FIELD_NAMES)),
+            "drive_parent_folder": next(iter(_drive_parent_values(row)), None),
             "has_drive": _has_any_value(row, ("gdrive_url", "drive_folder_url", "drive_folder_id")),
             "client_proposed_id": client_proposed_id,
             "client_resolution_method": resolution["method"],
@@ -1663,8 +1721,10 @@ def build_migration_plan(
     for table_name in ("clients", "contacts", "sites", "jobs"):
         report["planned_counts"][table_name] = len(report["planned"][table_name])
 
+    report["alias_summary"] = _build_alias_validation_summary(source, report, alias_config)
     report["client_resolution_summary"] = _build_client_resolution_summary(report)
     report["unresolved_site_samples"] = _build_unresolved_site_samples(report)
+    report["alias_draft_recommendations"] = _build_alias_draft_recommendations(report)
     report["diagnostics"] = _build_diagnostics(source, report)
     report.pop("_client_resolution_rows", None)
     report["go_no_go"]["warning_count"] = _warning_count(report)
@@ -1678,6 +1738,7 @@ def build_migration_plan(
     else:
         report["go_no_go"]["status"] = "OK"
         report["go_no_go"]["summary"] = "Dry-run completed without warnings."
+    report["m2_apply_gate"] = _build_m2_apply_gate(report)
     return report
 
 
@@ -1833,6 +1894,288 @@ def _build_client_resolution_summary(report: dict[str, Any]) -> dict[str, Any]:
             {"site_name": name, "site_rows": count}
             for name, count in unresolved_name_counts.most_common(TOP_UNRESOLVED_PREFIX_LIMIT)
         ],
+    }
+
+
+def _site_row_key(row: dict[str, Any], row_number: int) -> str:
+    return _clean(_first(row, ("site_id", "id"))) or f"synthetic:site:row:{row_number}"
+
+
+def _build_alias_validation_summary(
+    source: SourceData,
+    report: dict[str, Any],
+    alias_config: ClientAliasConfig,
+) -> dict[str, Any]:
+    summary = dict(report.get("alias_summary", {}))
+    summary.setdefault("aliases_matching_no_v1_sites", 0)
+    summary.setdefault("aliases_matching_multiple_client_proposals", 0)
+    summary.setdefault("aliases_creating_new_client_proposals", 0)
+    summary.setdefault("aliases_matching_v1_sites", 0)
+    summary.setdefault("aliases_matching_no_v1_sites_examples", [])
+    summary.setdefault("aliases_matching_multiple_client_proposals_examples", [])
+    summary.setdefault("aliases_creating_new_client_proposals_examples", [])
+
+    sites_table = source.tables.get("crm_sites")
+    site_rows = sites_table.rows if sites_table else []
+    resolution_by_row_key = {
+        row.get("row_key"): row
+        for row in _client_resolution_rows(report)
+        if row.get("row_key")
+    }
+    client_by_id = {
+        client["proposed_id"]: client
+        for client in report.get("planned", {}).get("clients", [])
+    }
+
+    no_match_examples: list[dict[str, Any]] = []
+    multiple_client_examples: list[dict[str, Any]] = []
+    alias_created_client_examples: list[dict[str, Any]] = []
+    aliases_matching_no_sites = 0
+    aliases_matching_multiple_clients = 0
+    aliases_creating_new_clients = 0
+    aliases_matching_sites = 0
+
+    for alias in alias_config.aliases:
+        matched_row_keys: list[str] = []
+        matched_client_ids: set[str] = set()
+        sample_site_names: list[str] = []
+        for row_number, row in enumerate(site_rows, start=1):
+            matched_value = _site_alias_match_value(alias, row)
+            if not matched_value:
+                continue
+            row_key = _site_row_key(row, row_number)
+            matched_row_keys.append(row_key)
+            site_name = _site_name_value(row)
+            if site_name and site_name not in sample_site_names:
+                sample_site_names.append(site_name)
+            resolution = resolution_by_row_key.get(row_key, {})
+            client_id = resolution.get("client_proposed_id")
+            if client_id:
+                matched_client_ids.add(client_id)
+
+        alias_detail = {
+            "alias_row_number": alias.row_number,
+            "source_field": alias.source_field,
+            "source_value": alias.source_value,
+            "target_client_name": alias.target_client_name,
+        }
+        if matched_row_keys:
+            aliases_matching_sites += 1
+        else:
+            aliases_matching_no_sites += 1
+            no_match_examples.append(alias_detail)
+            _append_alias_warning(
+                report,
+                {
+                    "table": "client_aliases",
+                    "row_key": f"row:{alias.row_number}",
+                    "reason": "alias-matches-no-v1-sites",
+                    "source_field": alias.source_field,
+                    "source_value": alias.source_value,
+                    "target_client_name": alias.target_client_name,
+                },
+            )
+
+        if len(matched_client_ids) > 1:
+            aliases_matching_multiple_clients += 1
+            client_names = [
+                client_by_id[client_id]["fields"]["name"]
+                for client_id in sorted(matched_client_ids)
+                if client_id in client_by_id
+            ]
+            multiple_client_examples.append(
+                {
+                    **alias_detail,
+                    "matched_client_proposal_count": len(matched_client_ids),
+                    "matched_client_names": client_names[:ALIAS_DRAFT_SAMPLE_LIMIT],
+                    "matched_site_rows": len(matched_row_keys),
+                    "sample_site_names": sample_site_names[:ALIAS_DRAFT_SAMPLE_LIMIT],
+                },
+            )
+            _append_alias_warning(
+                report,
+                {
+                    "table": "client_aliases",
+                    "row_key": f"row:{alias.row_number}",
+                    "reason": "alias-matches-multiple-client-proposals",
+                    "source_field": alias.source_field,
+                    "source_value": alias.source_value,
+                    "target_client_name": alias.target_client_name,
+                    "matched_client_proposal_count": len(matched_client_ids),
+                    "matched_client_names": client_names[:ALIAS_DRAFT_SAMPLE_LIMIT],
+                },
+            )
+
+        target_client_id = report["lookup_maps"]["client_name_to_proposed_id"].get(
+            _normalize_key(alias.target_client_name),
+        )
+        target_client = client_by_id.get(target_client_id or "")
+        if target_client and target_client.get("legacy_source_table") == "client_aliases":
+            aliases_creating_new_clients += 1
+            alias_created_client_examples.append(
+                {
+                    **alias_detail,
+                    "target_client_status": target_client.get("fields", {}).get("status"),
+                },
+            )
+
+    summary.update(
+        {
+            "aliases_matching_v1_sites": aliases_matching_sites,
+            "aliases_matching_no_v1_sites": aliases_matching_no_sites,
+            "aliases_matching_multiple_client_proposals": aliases_matching_multiple_clients,
+            "aliases_creating_new_client_proposals": aliases_creating_new_clients,
+            "aliases_matching_no_v1_sites_examples": no_match_examples[:25],
+            "aliases_matching_multiple_client_proposals_examples": multiple_client_examples[:25],
+            "aliases_creating_new_client_proposals_examples": alias_created_client_examples[:25],
+        },
+    )
+    return summary
+
+
+def _add_alias_draft_candidate(
+    candidates: dict[tuple[str, str], dict[str, Any]],
+    *,
+    source_field: str,
+    source_value: Any,
+    row: dict[str, Any],
+) -> None:
+    cleaned_value = _clean(source_value)
+    if not cleaned_value:
+        return
+    key = (source_field, _normalize_key(cleaned_value))
+    candidate = candidates.setdefault(
+        key,
+        {
+            "source_value": cleaned_value,
+            "source_field": source_field,
+            "target_client_name": "",
+            "target_client_status": "active",
+            "notes": "Drafted from unresolved V1 site rows; fill target_client_name after review.",
+            "review_status": "needs_review",
+            "match_count": 0,
+            "_sample_site_names": [],
+            "_sample_row_keys": [],
+        },
+    )
+    candidate["match_count"] += 1
+    site_name = _clean(row.get("site_name"))
+    row_key = _clean(row.get("row_key"))
+    if (
+        site_name
+        and site_name not in candidate["_sample_site_names"]
+        and len(candidate["_sample_site_names"]) < ALIAS_DRAFT_SAMPLE_LIMIT
+    ):
+        candidate["_sample_site_names"].append(site_name)
+    if (
+        row_key
+        and row_key not in candidate["_sample_row_keys"]
+        and len(candidate["_sample_row_keys"]) < ALIAS_DRAFT_SAMPLE_LIMIT
+    ):
+        candidate["_sample_row_keys"].append(row_key)
+
+
+def _build_alias_draft_recommendations(report: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: dict[tuple[str, str], dict[str, Any]] = {}
+    unresolved_rows = [
+        row
+        for row in _client_resolution_rows(report)
+        if row.get("client_resolution_method") == "synthetic_unresolved_client"
+    ]
+    for row in unresolved_rows:
+        for source_field, source_value in (
+            ("account", row.get("account")),
+            ("managed_by", row.get("managed_by")),
+            ("drive_parent_folder", row.get("drive_parent_folder")),
+            ("client_id", row.get("client_resolution_source_value")),
+            ("site_name_prefix", row.get("site_name_prefix")),
+        ):
+            _add_alias_draft_candidate(
+                candidates,
+                source_field=source_field,
+                source_value=source_value,
+                row=row,
+            )
+        if not _clean(row.get("site_name_prefix")):
+            _add_alias_draft_candidate(
+                candidates,
+                source_field="site_name_exact",
+                source_value=row.get("site_name"),
+                row=row,
+            )
+
+    field_order = {
+        "account": 0,
+        "managed_by": 1,
+        "site_name_prefix": 2,
+        "site_name_exact": 3,
+        "client_id": 4,
+        "drive_parent_folder": 5,
+    }
+    rows = sorted(
+        candidates.values(),
+        key=lambda item: (
+            -int(item.get("match_count", 0)),
+            field_order.get(str(item.get("source_field")), 99),
+            str(item.get("source_value", "")).lower(),
+        ),
+    )
+    draft_rows = []
+    for row in rows[:ALIAS_DRAFT_ROW_LIMIT]:
+        draft_rows.append(
+            {
+                "source_value": row["source_value"],
+                "source_field": row["source_field"],
+                "target_client_name": row["target_client_name"],
+                "target_client_status": row["target_client_status"],
+                "notes": row["notes"],
+                "review_status": row["review_status"],
+                "match_count": row["match_count"],
+                "sample_site_names": " | ".join(row["_sample_site_names"]),
+                "sample_row_keys": " | ".join(row["_sample_row_keys"]),
+            },
+        )
+    return draft_rows
+
+
+def _build_m2_apply_gate(report: dict[str, Any]) -> dict[str, Any]:
+    alias_summary = report.get("alias_summary", {})
+    resolution_summary = report.get("client_resolution_summary", {})
+    unresolved_sites = int(resolution_summary.get("sites_unresolved_after_aliases", 0) or 0)
+    invalid_alias_rows = int(alias_summary.get("rows_invalid", 0) or 0)
+    unsupported_rows = int(alias_summary.get("unsupported_source_field_rows", 0) or 0)
+    unknown_rows = int(alias_summary.get("unknown_source_field_rows", 0) or 0)
+    site_multiple_matches = int(
+        resolution_summary.get("sites_with_multiple_alias_matches", 0) or 0,
+    )
+    alias_multiple_clients = int(
+        alias_summary.get("aliases_matching_multiple_client_proposals", 0) or 0,
+    )
+    reasons = []
+    if unresolved_sites > M2_UNRESOLVED_SITE_THRESHOLD:
+        reasons.append(
+            "Unresolved site count "
+            f"{unresolved_sites} is above threshold {M2_UNRESOLVED_SITE_THRESHOLD}.",
+        )
+    if invalid_alias_rows:
+        reasons.append(f"Alias file has {invalid_alias_rows} invalid row(s).")
+    if unsupported_rows or unknown_rows:
+        reasons.append(
+            "Alias file has unsupported or unknown source_field row(s): "
+            f"{unsupported_rows + unknown_rows}.",
+        )
+    if site_multiple_matches or alias_multiple_clients:
+        reasons.append(
+            "Alias validation found multiple-match warning(s): "
+            f"{site_multiple_matches + alias_multiple_clients}.",
+        )
+    if report.get("errors"):
+        reasons.append(f"Dry-run found {len(report['errors'])} structural error(s).")
+    reasons.append("--apply is intentionally blocked until M2.")
+    return {
+        "safe_to_proceed": False,
+        "unresolved_site_threshold": M2_UNRESOLVED_SITE_THRESHOLD,
+        "reasons": reasons,
     }
 
 
@@ -2088,12 +2431,15 @@ def _build_diagnostics(source: SourceData, report: dict[str, Any]) -> dict[str, 
 def _markdown_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> list[str]:
     if not rows:
         return ["- None"]
+    def cell(value: Any) -> str:
+        return str(value).replace("\n", "<br>").replace("|", "\\|")
+
     lines = [
-        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(cell(header) for header in headers) + " |",
         "| " + " | ".join("---" for _ in headers) + " |",
     ]
     for row in rows:
-        lines.append("| " + " | ".join(str(value) for value in row) + " |")
+        lines.append("| " + " | ".join(cell(value) for value in row) + " |")
     return lines
 
 
@@ -2132,12 +2478,85 @@ def _format_alias_client_groups(summary: dict[str, Any]) -> list[str]:
     )
 
 
+def _format_alias_created_client_examples(alias_summary: dict[str, Any]) -> list[str]:
+    return _markdown_table(
+        ("Alias Row", "Source Field", "Source Value", "Target Client", "Status"),
+        [
+            (
+                item.get("alias_row_number"),
+                item.get("source_field"),
+                item.get("source_value"),
+                item.get("target_client_name"),
+                item.get("target_client_status"),
+            )
+            for item in alias_summary.get("aliases_creating_new_client_proposals_examples", [])
+        ],
+    )
+
+
+def _format_alias_no_match_examples(alias_summary: dict[str, Any]) -> list[str]:
+    return _markdown_table(
+        ("Alias Row", "Source Field", "Source Value", "Target Client"),
+        [
+            (
+                item.get("alias_row_number"),
+                item.get("source_field"),
+                item.get("source_value"),
+                item.get("target_client_name"),
+            )
+            for item in alias_summary.get("aliases_matching_no_v1_sites_examples", [])
+        ],
+    )
+
+
+def _format_alias_multiple_client_examples(alias_summary: dict[str, Any]) -> list[str]:
+    return _markdown_table(
+        (
+            "Alias Row",
+            "Source Field",
+            "Source Value",
+            "Target Client",
+            "Matched Client Proposals",
+            "Sample Sites",
+        ),
+        [
+            (
+                item.get("alias_row_number"),
+                item.get("source_field"),
+                item.get("source_value"),
+                item.get("target_client_name"),
+                ", ".join(item.get("matched_client_names", [])) or item.get(
+                    "matched_client_proposal_count",
+                ),
+                " | ".join(item.get("sample_site_names", [])),
+            )
+            for item in alias_summary.get("aliases_matching_multiple_client_proposals_examples", [])
+        ],
+    )
+
+
 def _format_top_unresolved_prefixes(summary: dict[str, Any]) -> list[str]:
     return _markdown_table(
         ("Site Name / Prefix", "Rows"),
         [
             (item.get("site_name_prefix"), item.get("site_rows"))
             for item in summary.get("top_unresolved_site_prefixes", [])
+        ],
+    )
+
+
+def _format_alias_draft_recommendations(rows: Sequence[dict[str, Any]]) -> list[str]:
+    return _markdown_table(
+        ("Source Field", "Source Value", "Unresolved Rows", "Sample Sites", "Sample Row Keys"),
+        [
+            (
+                row.get("source_field"),
+                row.get("source_value"),
+                row.get("match_count"),
+                row.get("sample_site_names"),
+                row.get("sample_row_keys"),
+            )
+            for row in rows[:25]
         ],
     )
 
@@ -2204,6 +2623,8 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     report_artifact_diagnostics = diagnostics.get("report_artifacts", {})
     alias_summary = report.get("alias_summary", {})
     client_resolution_summary = report.get("client_resolution_summary", {})
+    m2_apply_gate = report.get("m2_apply_gate", {})
+    safe_to_proceed = "Yes" if m2_apply_gate.get("safe_to_proceed") else "No"
     sections = [
         "# V1 to V2 Migration M1 Dry-Run Report",
         "",
@@ -2217,13 +2638,28 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         *_format_count_lines(report["source_row_counts"]),
         "",
         "## 4. Alias Mapping Summary",
+        "### Alias File Used",
+        f"- {alias_summary.get('file_path') or '(not provided)'}",
+        "",
+        "### Alias Row Validation",
         *_format_diagnostic_counts(
             {
-                "Alias mapping file path": alias_summary.get("file_path") or "(not provided)",
                 "Alias rows loaded": alias_summary.get("rows_loaded", 0),
                 "Alias rows valid": alias_summary.get("rows_valid", 0),
                 "Alias rows invalid": alias_summary.get("rows_invalid", 0),
+                "Blank required field rows": alias_summary.get("blank_required_field_rows", 0),
+                "Unknown source_field rows": alias_summary.get("unknown_source_field_rows", 0),
                 "Unsupported source_field rows": alias_summary.get("unsupported_source_field_rows", 0),
+                "Duplicate alias rows": alias_summary.get("duplicate_alias_rows", 0),
+                "Aliases matching no V1 sites": alias_summary.get("aliases_matching_no_v1_sites", 0),
+                "Aliases matching multiple V2 client proposals": alias_summary.get(
+                    "aliases_matching_multiple_client_proposals",
+                    0,
+                ),
+                "Aliases creating new client proposals": alias_summary.get(
+                    "aliases_creating_new_client_proposals",
+                    0,
+                ),
                 "Sites resolved by alias": client_resolution_summary.get("sites_resolved_by_alias", 0),
                 "Sites unresolved after aliases": client_resolution_summary.get(
                     "sites_unresolved_after_aliases",
@@ -2243,11 +2679,27 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "### Client Resolution Methods",
         *_format_diagnostic_counts(client_resolution_summary.get("by_method", {})),
         "",
-        "### Alias Client Groups",
+        "### Sites Resolved By Alias",
         *_format_alias_client_groups(client_resolution_summary),
         "",
-        "### Top Unresolved Site Names / Prefixes",
+        "### Sites Still Unresolved",
+        f"- Remaining unresolved count: {client_resolution_summary.get('sites_unresolved_after_aliases', 0)}",
+        *_format_unresolved_site_samples(report.get("unresolved_site_samples", [])),
+        "",
+        "### Alias-Created Client Proposals",
+        *_format_alias_created_client_examples(alias_summary),
+        "",
+        "### Multiple-Match Warnings",
+        *_format_alias_multiple_client_examples(alias_summary),
+        "",
+        "### Aliases Matching No V1 Sites",
+        *_format_alias_no_match_examples(alias_summary),
+        "",
+        "### Top Unresolved Site Prefixes",
         *_format_top_unresolved_prefixes(client_resolution_summary),
+        "",
+        "### Recommended Alias Rows To Add",
+        *_format_alias_draft_recommendations(report.get("alias_draft_recommendations", [])),
         "",
         "### Alias Warnings",
         *_alias_warning_lines(report),
@@ -2323,6 +2775,11 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         f"- Errors: {report['go_no_go']['error_count']}",
         f"- Summary: {report['go_no_go']['summary']}",
         "",
+        "## 18. Safe to Proceed to M2 Apply?",
+        f"- Safe to proceed to M2 apply? {safe_to_proceed}",
+        f"- Unresolved site threshold: {m2_apply_gate.get('unresolved_site_threshold', M2_UNRESOLVED_SITE_THRESHOLD)}",
+        *[f"- {reason}" for reason in m2_apply_gate.get("reasons", [])],
+        "",
         "## Safety",
         "- M1 is dry-run only.",
         "- No V2 database connection is opened.",
@@ -2353,6 +2810,28 @@ def write_report_outputs(
         path.write_text(render_markdown_report(report), encoding="utf-8")
 
 
+def write_alias_draft(
+    report: dict[str, Any],
+    output_path: str | Path,
+    *,
+    force: bool = False,
+) -> Path:
+    path = Path(output_path).expanduser().resolve()
+    if path.exists() and not force:
+        raise FileExistsError(
+            f"Alias draft already exists and was not overwritten: {path}. "
+            "Pass --force only after confirming the file is safe to replace.",
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = report.get("alias_draft_recommendations", [])
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(ALIAS_DRAFT_COLUMNS))
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in ALIAS_DRAFT_COLUMNS})
+    return path
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a dry-run V1 SQLite CRM to V2 CRM migration plan.",
@@ -2381,6 +2860,15 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--client-aliases",
         help="Optional read-only CSV mapping file for deterministic site-to-client alias resolution.",
     )
+    parser.add_argument(
+        "--write-alias-draft",
+        help="Optional path for a private draft client alias CSV built from unresolved dry-run sites.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Allow --write-alias-draft to overwrite an existing draft file.",
+    )
     return parser.parse_args(argv)
 
 
@@ -2405,6 +2893,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_json=args.output_json,
             output_md=args.output_md,
         )
+        if args.write_alias_draft:
+            draft_path = write_alias_draft(
+                report,
+                args.write_alias_draft,
+                force=args.force,
+            )
+            print(f"\nAlias draft written: {draft_path}\n")
         print(render_text_report(report))
     except Exception as error:
         print(f"V1 migration dry-run failed: {error}", file=sys.stderr)

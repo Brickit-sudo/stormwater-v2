@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from scripts import migrate_v1
 
 
@@ -535,6 +537,7 @@ def test_invalid_alias_row_produces_warning(tmp_path: Path) -> None:
     config = migrate_v1.read_client_aliases(alias_path, source)
 
     assert config.summary["rows_invalid"] == 1
+    assert config.summary["blank_required_field_rows"] == 1
     assert any(warning["reason"] == "invalid-alias-row" for warning in config.warnings)
 
 
@@ -548,8 +551,44 @@ def test_unsupported_alias_source_field_produces_warning(tmp_path: Path) -> None
 
     config = migrate_v1.read_client_aliases(alias_path, source)
 
+    assert config.summary["rows_invalid"] == 1
     assert config.summary["unsupported_source_field_rows"] == 1
     assert any(warning["reason"] == "unsupported-source-field" for warning in config.warnings)
+
+
+def test_unknown_alias_source_field_produces_validation_warning(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
+    source = migrate_v1.read_sqlite_source(db_path)
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Alias Test", "not_a_supported_field", "Alias Owner")],
+    )
+
+    config = migrate_v1.read_client_aliases(alias_path, source)
+
+    assert config.summary["rows_invalid"] == 1
+    assert config.summary["unknown_source_field_rows"] == 1
+    assert any(warning["reason"] == "unknown-source-field" for warning in config.warnings)
+
+
+def test_duplicate_alias_rows_are_invalid(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
+    source = migrate_v1.read_sqlite_source(db_path)
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [
+            _alias_row("Alias Test", "site_name_prefix", "Alias Owner"),
+            _alias_row("Alias Test", "site_name_prefix", "Other Owner"),
+        ],
+    )
+
+    config = migrate_v1.read_client_aliases(alias_path, source)
+
+    assert config.summary["rows_loaded"] == 2
+    assert config.summary["rows_valid"] == 1
+    assert config.summary["rows_invalid"] == 1
+    assert config.summary["duplicate_alias_rows"] == 1
+    assert any(warning["reason"] == "duplicate-alias-row" for warning in config.warnings)
 
 
 def test_site_name_exact_alias_resolves_client(tmp_path: Path) -> None:
@@ -708,6 +747,44 @@ def test_invalid_alias_target_client_status_warns_and_defaults(tmp_path: Path) -
     assert any(warning["reason"] == "invalid-target-client-status" for warning in report["alias_warnings"])
 
 
+def test_alias_draft_generation_does_not_overwrite_existing_file(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
+    report = migrate_v1.run_dry_run(v1_db=db_path, organization_name="Sterling Stormwater")
+    draft_path = tmp_path / "client_aliases.draft.csv"
+    draft_path.write_text("keep me", encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        migrate_v1.write_alias_draft(report, draft_path)
+
+    assert draft_path.read_text(encoding="utf-8") == "keep me"
+
+
+def test_alias_draft_includes_unresolved_site_samples(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [
+            {
+                "site_id": "SSW-DRAFT",
+                "name": "Draft Creek - BMP 1",
+                "managed_by": "Draft Manager",
+            },
+        ],
+    )
+    report = migrate_v1.run_dry_run(v1_db=db_path, organization_name="Sterling Stormwater")
+    draft_path = migrate_v1.write_alias_draft(report, tmp_path / "client_aliases.draft.csv")
+
+    rows = list(csv.DictReader(draft_path.open("r", encoding="utf-8", newline="")))
+
+    assert any(
+        row["source_field"] == "site_name_prefix"
+        and row["source_value"] == "Draft Creek"
+        and row["sample_row_keys"] == "SSW-DRAFT"
+        for row in rows
+    )
+    assert any(row["source_field"] == "managed_by" and row["source_value"] == "Draft Manager" for row in rows)
+    assert report["alias_draft_recommendations"]
+
+
 def test_json_report_shape_is_stable(tmp_path: Path) -> None:
     db_path = _create_v1_fixture(tmp_path / "v1.sqlite")
     output_path = tmp_path / "migration-report.json"
@@ -717,6 +794,7 @@ def test_json_report_shape_is_stable(tmp_path: Path) -> None:
     saved = json.loads(output_path.read_text(encoding="utf-8"))
 
     assert list(saved.keys()) == [
+        "alias_draft_recommendations",
         "alias_summary",
         "alias_warnings",
         "client_resolution_summary",
@@ -726,6 +804,7 @@ def test_json_report_shape_is_stable(tmp_path: Path) -> None:
         "expected_tables",
         "go_no_go",
         "lookup_maps",
+        "m2_apply_gate",
         "missing_tables",
         "mode",
         "organization",
@@ -794,6 +873,20 @@ def test_markdown_report_includes_alias_summary(tmp_path: Path) -> None:
     assert "Markdown Client" in markdown
 
 
+def test_markdown_report_includes_remaining_unresolved_count(tmp_path: Path) -> None:
+    db_path = _create_alias_fixture(
+        tmp_path / "v1.sqlite",
+        [{"site_id": "SSW-UNRESOLVED", "name": "Unresolved Creek - BMP 1"}],
+    )
+    report = migrate_v1.run_dry_run(v1_db=db_path, organization_name="Sterling Stormwater")
+
+    markdown = migrate_v1.render_markdown_report(report)
+
+    assert "### Sites Still Unresolved" in markdown
+    assert "Remaining unresolved count: 1" in markdown
+    assert "Safe to proceed to M2 apply? No" in markdown
+
+
 def test_private_mapping_file_is_not_required_for_tests(tmp_path: Path) -> None:
     db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
 
@@ -833,6 +926,30 @@ def test_apply_exits_not_implemented(tmp_path: Path, capsys) -> None:
             str(db_path),
             "--organization-name",
             "Sterling Stormwater",
+            "--apply",
+        ],
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "--apply is not implemented in Phase M1" in captured.err
+
+
+def test_apply_exits_not_implemented_even_with_aliases(tmp_path: Path, capsys) -> None:
+    db_path = _create_alias_fixture(tmp_path / "v1.sqlite")
+    alias_path = _write_aliases(
+        tmp_path / "client_aliases.csv",
+        [_alias_row("Alias Test Site", "site_name_exact", "Alias Owner")],
+    )
+
+    exit_code = migrate_v1.main(
+        [
+            "--v1-db",
+            str(db_path),
+            "--organization-name",
+            "Sterling Stormwater",
+            "--client-aliases",
+            str(alias_path),
             "--apply",
         ],
     )

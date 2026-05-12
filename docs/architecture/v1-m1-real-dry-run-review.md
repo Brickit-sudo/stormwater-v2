@@ -156,14 +156,23 @@ Columns:
 
 The real `client_aliases.csv` should not be committed if it contains private client data. Commit only an example template with fake rows.
 
-Run the alias-supported dry-run with:
+Draft a private alias map from unresolved dry-run diagnostics with:
 
 ```powershell
 cd apps\api
-.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --client-aliases "PATH\TO\client_aliases.csv" --output-md migration-report.md
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --output-json migration-dry-run.json --output-md migration-report.md --write-alias-draft migration_maps\client_aliases.draft.csv
 ```
 
-The dry-run reports alias rows loaded/valid/invalid, unsupported `source_field` rows, sites resolved by alias, sites still unresolved, multiple-match conflicts, alias-created client proposals, and limited unresolved site samples/prefixes for manual review. Supported deterministic resolver fields are `client_id`, `account`, `managed_by`, `site_name_exact`, `site_name_prefix`, `site_name_contains`, and `drive_parent_folder` when an explicit parent-folder field exists in V1. City/state and fuzzy matching are not resolver inputs.
+The draft leaves `target_client_name` blank for Bryce to fill after review and refuses to overwrite an existing draft unless `--force` is passed.
+
+Run the alias-supported validation dry-run with:
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\migrate_v1.py --v1-db "PATH\TO\v1.sqlite" --organization-name "Sterling Stormwater" --dry-run --client-aliases migration_maps\client_aliases.csv --output-json migration-alias-dry-run.json --output-md migration-alias-report.md
+```
+
+The dry-run reports alias rows loaded/valid/invalid, blank required fields, duplicate aliases, unsupported `source_field` rows, aliases that match no V1 sites, aliases that match multiple V2 client proposals, sites resolved by alias, sites still unresolved, multiple-match conflicts, alias-created client proposals, recommended alias rows to add, and limited unresolved site samples/prefixes for manual review. Supported deterministic resolver fields are `client_id`, `account`, `managed_by`, `site_name_exact`, `site_name_prefix`, `site_name_contains`, and `drive_parent_folder` when an explicit parent-folder field exists in V1. City/state and fuzzy matching are not resolver inputs. `--apply` remains blocked until M2.
 
 ## 12. Open Decisions for Bryce
 
