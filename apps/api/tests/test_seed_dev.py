@@ -3,13 +3,14 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Client, EvidenceFile, Job, Organization, Site
+from app.models import Client, EvidenceFile, Job, Organization, Reminder, Site
 from scripts.seed_dev import (
     DEMO_ORGANIZATION_ID,
     LEGACY_SOURCE,
     SEED_CLIENTS,
     SEED_EVIDENCE_FILES,
     SEED_JOBS,
+    SEED_REMINDERS,
     SEED_SITES,
     reset_seed,
     seed,
@@ -23,6 +24,7 @@ def test_seed_constants_have_expected_structure() -> None:
         "clients": 3,
         "sites": 5,
         "jobs": 8,
+        "reminders": 4,
         "evidence_files": 7,
     }
     assert {client["status"] for client in SEED_CLIENTS} == {
@@ -38,6 +40,8 @@ def test_seed_constants_have_expected_structure() -> None:
     )
     scopes = {record["scope"] for record in SEED_EVIDENCE_FILES}
     assert scopes == {"client", "site", "job"}
+    assert {record["status"] for record in SEED_REMINDERS} == {"open", "completed"}
+    assert {record["target_type"] for record in SEED_REMINDERS} == {"client", "site", "job"}
 
 
 def test_seed_is_idempotent(db_session: Session) -> None:
@@ -49,6 +53,7 @@ def test_seed_is_idempotent(db_session: Session) -> None:
     assert db_session.query(Client).filter(Client.legacy_source == LEGACY_SOURCE).count() == 3
     assert db_session.query(Site).filter(Site.legacy_source == LEGACY_SOURCE).count() == 5
     assert db_session.query(Job).filter(Job.legacy_source == LEGACY_SOURCE).count() == 8
+    assert db_session.query(Reminder).count() == 4
     assert (
         db_session.query(EvidenceFile)
         .filter(EvidenceFile.legacy_source == LEGACY_SOURCE)
@@ -73,6 +78,7 @@ def test_reset_seed_deletes_only_seed_source_rows(db_session: Session) -> None:
     db_session.commit()
 
     assert deleted == {
+        "reminders": 4,
         "evidence_files": 7,
         "jobs": 8,
         "sites": 5,
@@ -87,6 +93,7 @@ def test_reset_seed_deletes_only_seed_source_rows(db_session: Session) -> None:
     assert db_session.query(Client).filter(Client.legacy_source == LEGACY_SOURCE).count() == 0
     assert db_session.query(Site).filter(Site.legacy_source == LEGACY_SOURCE).count() == 0
     assert db_session.query(Job).filter(Job.legacy_source == LEGACY_SOURCE).count() == 0
+    assert db_session.query(Reminder).count() == 0
     assert (
         db_session.query(EvidenceFile)
         .filter(EvidenceFile.legacy_source == LEGACY_SOURCE)

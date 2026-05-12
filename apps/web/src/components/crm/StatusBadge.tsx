@@ -21,6 +21,10 @@ const statusTone: Record<string, BadgeTone> = {
   completed: "success",
   cancelled: "danger",
 
+  // Reminders
+  open: "info",
+  snoozed: "warning",
+
   // Shared lifecycle
   archived: "muted",
   unknown: "muted",

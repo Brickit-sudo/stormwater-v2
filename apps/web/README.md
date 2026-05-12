@@ -40,7 +40,7 @@ Use `--reset-seed` when you want to remove only existing `legacy_source='seed_de
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, eight jobs, and seven `evidence_files` metadata rows that drive the Drive/File panels.
+Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, eight jobs, four local reminders, and seven `evidence_files` metadata rows that drive the Drive/File panels and `/schedule`.
 
 ## Run
 
@@ -63,12 +63,18 @@ Open:
 - `http://127.0.0.1:3000/crm/clients`
 - `http://127.0.0.1:3000/crm/sites`
 - `http://127.0.0.1:3000/crm/jobs`
+- `http://127.0.0.1:3000/schedule`
 
 ## CRM Routes
 
 - `/crm/clients` lists, creates, edits, archives, and shows linked sites/jobs.
 - `/crm/sites` lists, creates, edits, archives, filters by client, and shows linked jobs.
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.
+- `/schedule` lists local reminders grouped by Overdue, Today, Upcoming, and Completed; it supports New, Edit, Mark Complete, Archive, status filtering, and priority filtering.
+
+The Jobs detail panel also shows a compact reminders section for the selected job. It can add a reminder for that job, mark job reminders complete, and archive them. Editing reminders stays on `/schedule`.
+
+Reminders are local-only in this phase. There is no Outlook sync, Gmail sync, external calendar event creation, email sending, push notification, AI follow-up, or fake provider button. The list view shipped before a calendar grid to keep scheduling fast and safe while future integration details are still deferred.
 
 ## Drive/File Panel
 

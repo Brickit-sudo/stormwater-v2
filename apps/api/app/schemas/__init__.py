@@ -9,6 +9,13 @@ from app.schemas.evidence_file import (
     EvidenceFileUpdate,
 )
 from app.schemas.job import JobBase, JobCreate, JobListResponse, JobRead, JobUpdate
+from app.schemas.reminder import (
+    ReminderBase,
+    ReminderCreate,
+    ReminderListResponse,
+    ReminderRead,
+    ReminderUpdate,
+)
 from app.schemas.site import SiteBase, SiteCreate, SiteListResponse, SiteRead, SiteUpdate
 
 __all__ = [
@@ -27,6 +34,11 @@ __all__ = [
     "JobListResponse",
     "JobRead",
     "JobUpdate",
+    "ReminderBase",
+    "ReminderCreate",
+    "ReminderListResponse",
+    "ReminderRead",
+    "ReminderUpdate",
     "SiteBase",
     "SiteCreate",
     "SiteListResponse",

@@ -65,6 +65,31 @@ export type Job = {
   archived_at: string | null;
 };
 
+export type ReminderStatus = "open" | "snoozed" | "completed" | "archived";
+
+export type ReminderPriority = "low" | "medium" | "high";
+
+export type Reminder = {
+  id: UUID;
+  organization_id: UUID;
+  client_id: UUID | null;
+  site_id: UUID | null;
+  job_id: UUID | null;
+  assigned_to: UUID | null;
+  source_type: string | null;
+  source_id: string | null;
+  title: string;
+  description: string | null;
+  status: ReminderStatus;
+  priority: ReminderPriority;
+  due_at: string | null;
+  reminder_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
 export type ClientFormInput = {
   client_code?: string | null;
   name: string;
@@ -111,6 +136,37 @@ export type ListOptions = {
   status?: string;
   clientId?: UUID;
   siteId?: UUID;
+  limit?: number;
+  offset?: number;
+};
+
+export type ReminderCreate = {
+  title: string;
+  description?: string | null;
+  status?: ReminderStatus;
+  priority?: ReminderPriority;
+  due_at?: string | null;
+  reminder_at?: string | null;
+  completed_at?: string | null;
+  assigned_to?: UUID | null;
+  source_type?: string | null;
+  source_id?: string | null;
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+};
+
+export type ReminderUpdate = Partial<ReminderCreate>;
+
+export type ReminderListOptions = {
+  organizationId: UUID;
+  status?: ReminderStatus;
+  priority?: ReminderPriority;
+  clientId?: UUID;
+  siteId?: UUID;
+  jobId?: UUID;
+  dueBefore?: string;
+  dueAfter?: string;
   limit?: number;
   offset?: number;
 };

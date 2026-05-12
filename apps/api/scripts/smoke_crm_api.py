@@ -23,6 +23,8 @@ EXPECTED_COUNTS = {
     "clients": 3,
     "sites": 5,
     "jobs": 8,
+    "reminders": 4,
+    "open_reminders": 3,
     "files": 7,
 }
 
@@ -70,11 +72,19 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     clients = _get_json(base_url, "/v1/clients", query)
     sites = _get_json(base_url, "/v1/sites", query)
     jobs = _get_json(base_url, "/v1/jobs", query)
+    reminders = _get_json(base_url, "/v1/reminders", query)
+    open_reminders = _get_json(
+        base_url,
+        "/v1/reminders",
+        {**query, "status": "open"},
+    )
     files = _get_json(base_url, "/v1/files", query)
 
     _require_count("clients", clients, EXPECTED_COUNTS["clients"])
     _require_count("sites", sites, EXPECTED_COUNTS["sites"])
     _require_count("jobs", jobs, EXPECTED_COUNTS["jobs"])
+    _require_count("reminders", reminders, EXPECTED_COUNTS["reminders"])
+    _require_count("open reminders", open_reminders, EXPECTED_COUNTS["open_reminders"])
     _require_count("files", files, EXPECTED_COUNTS["files"])
 
     first_client = clients["items"][0]
@@ -85,6 +95,10 @@ def run_smoke(base_url: str, organization_id: str) -> None:
 
     spring_inspection_job = next(
         (job for job in jobs["items"] if job.get("job_code") == "BAY-2026-INS"),
+        None,
+    )
+    catch_basin_job = next(
+        (job for job in jobs["items"] if job.get("job_code") == "BAY-2026-CB"),
         None,
     )
     if spring_inspection_job is not None:
@@ -98,10 +112,22 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     else:
         job_files = {"total": 0, "items": []}
 
+    if catch_basin_job is not None:
+        job_reminders_query = {"organization_id": organization_id, "job_id": catch_basin_job["id"]}
+        job_reminders = _get_json(base_url, "/v1/reminders", job_reminders_query)
+        if job_reminders.get("total") != 1:
+            raise SmokeFailure(
+                f"Expected 1 seeded reminder for job {catch_basin_job['name']}, "
+                f"got {job_reminders.get('total')}.",
+            )
+    else:
+        job_reminders = {"total": 0, "items": []}
+
     print(f"health: {health['status']} ({health['service']})")
     print(f"clients: {clients['total']} - {_sample_names(clients)}")
     print(f"sites: {sites['total']} - {_sample_names(sites)}")
     print(f"jobs: {jobs['total']} - {_sample_names(jobs)}")
+    print(f"reminders: {reminders['total']} ({open_reminders['total']} open)")
     print(f"files: {files['total']}")
     print(f"linked client sites: {client_sites['total']} for {first_client['name']}")
     print(f"linked client jobs: {client_jobs['total']} for {first_client['name']}")
@@ -110,6 +136,11 @@ def run_smoke(base_url: str, organization_id: str) -> None:
         print(
             f"job-scoped files: {job_files['total']} for "
             f"{spring_inspection_job['name']}",
+        )
+    if catch_basin_job is not None:
+        print(
+            f"job-scoped reminders: {job_reminders['total']} for "
+            f"{catch_basin_job['name']}",
         )
 
 

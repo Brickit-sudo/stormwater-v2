@@ -44,3 +44,4 @@ class Client(
     sites: Mapped[list["Site"]] = relationship(back_populates="client")
     jobs: Mapped[list["Job"]] = relationship(back_populates="client")
     evidence_files: Mapped[list["EvidenceFile"]] = relationship(back_populates="client")
+    reminders: Mapped[list["Reminder"]] = relationship(back_populates="client")

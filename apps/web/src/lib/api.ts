@@ -9,6 +9,10 @@ import type {
   JobFormInput,
   ListOptions,
   ListResponse,
+  Reminder,
+  ReminderCreate,
+  ReminderListOptions,
+  ReminderUpdate,
   Site,
   SiteFormInput,
   UUID,
@@ -128,6 +132,32 @@ function orgQuery({
     status,
     client_id: clientId,
     site_id: siteId,
+    limit,
+    offset,
+  };
+}
+
+function reminderQuery({
+  organizationId,
+  status,
+  priority,
+  clientId,
+  siteId,
+  jobId,
+  dueBefore,
+  dueAfter,
+  limit,
+  offset,
+}: ReminderListOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    status,
+    priority,
+    client_id: clientId,
+    site_id: siteId,
+    job_id: jobId,
+    due_before: dueBefore,
+    due_after: dueAfter,
     limit,
     offset,
   };
@@ -263,6 +293,53 @@ export function updateJob(
 
 export function archiveJob(jobId: UUID, organizationId: UUID): Promise<Job> {
   return apiRequest<Job>(`/v1/jobs/${jobId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listReminders(
+  options: ReminderListOptions,
+): Promise<ListResponse<Reminder>> {
+  return apiRequest<ListResponse<Reminder>>("/v1/reminders", {
+    query: reminderQuery(options),
+  });
+}
+
+export function createReminder(
+  organizationId: UUID,
+  input: ReminderCreate,
+): Promise<Reminder> {
+  return apiRequest<Reminder>("/v1/reminders", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateReminder(
+  reminderId: UUID,
+  organizationId: UUID,
+  input: ReminderUpdate,
+): Promise<Reminder> {
+  return apiRequest<Reminder>(`/v1/reminders/${reminderId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function completeReminder(
+  reminderId: UUID,
+  organizationId: UUID,
+): Promise<Reminder> {
+  return updateReminder(reminderId, organizationId, { status: "completed" });
+}
+
+export function archiveReminder(
+  reminderId: UUID,
+  organizationId: UUID,
+): Promise<Reminder> {
+  return apiRequest<Reminder>(`/v1/reminders/${reminderId}`, {
     method: "DELETE",
     query: { organization_id: organizationId },
   });

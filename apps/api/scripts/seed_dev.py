@@ -4,7 +4,7 @@ import argparse
 import sys
 import uuid
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -17,7 +17,7 @@ if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
 from app.db import get_session_factory  # noqa: E402
-from app.models import Client, EvidenceFile, Job, Organization, Site  # noqa: E402
+from app.models import Client, EvidenceFile, Job, Organization, Reminder, Site  # noqa: E402
 
 
 LEGACY_SOURCE = "seed_dev"
@@ -303,6 +303,66 @@ SEED_JOBS: list[dict[str, Any]] = [
 ]
 
 
+SEED_REMINDERS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("reminder:bayside-catch-basin-revisit"),
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-catch-basin-cleaning",
+        "title": "Revisit blocked catch basins",
+        "description": "Two structures were blocked by parked vehicles during the first cleaning visit.",
+        "status": "open",
+        "priority": "high",
+        "due_at": datetime(2026, 5, 10, 13, 0, tzinfo=UTC),
+        "reminder_at": datetime(2026, 5, 10, 8, 0, tzinfo=UTC),
+        "completed_at": None,
+        "source_type": "seed_dev",
+        "source_id": "operation:blocked-catch-basin-revisit",
+    },
+    {
+        "id": _seed_uuid("reminder:bayside-site-access-confirmation"),
+        "target_type": "site",
+        "target_legacy_id": "site:bayside-retail-plaza",
+        "title": "Confirm Bayside early access window",
+        "description": "Coordinate site access before retail traffic for the scheduled inspection window.",
+        "status": "open",
+        "priority": "medium",
+        "due_at": datetime(2026, 5, 12, 14, 0, tzinfo=UTC),
+        "reminder_at": datetime(2026, 5, 12, 9, 0, tzinfo=UTC),
+        "completed_at": None,
+        "source_type": "seed_dev",
+        "source_id": "operation:site-access-confirmation",
+    },
+    {
+        "id": _seed_uuid("reminder:northeast-retail-onboarding-checkin"),
+        "target_type": "client",
+        "target_legacy_id": "client:northeast-retail-portfolio",
+        "title": "Portfolio onboarding follow-up",
+        "description": "Check whether Northeast Retail wants the consolidated stormwater service package.",
+        "status": "open",
+        "priority": "low",
+        "due_at": datetime(2026, 5, 25, 15, 0, tzinfo=UTC),
+        "reminder_at": datetime(2026, 5, 22, 13, 0, tzinfo=UTC),
+        "completed_at": None,
+        "source_type": "seed_dev",
+        "source_id": "operation:portfolio-onboarding",
+    },
+    {
+        "id": _seed_uuid("reminder:augusta-completed-ticket-closeout"),
+        "target_type": "job",
+        "target_legacy_id": "job:augusta-winter-sediment-cleanout",
+        "title": "Confirm cleanout closeout was logged",
+        "description": "Completed seed reminder used to verify completed reminder filtering.",
+        "status": "completed",
+        "priority": "medium",
+        "due_at": datetime(2026, 4, 23, 16, 0, tzinfo=UTC),
+        "reminder_at": datetime(2026, 4, 23, 12, 0, tzinfo=UTC),
+        "completed_at": datetime(2026, 4, 23, 18, 0, tzinfo=UTC),
+        "source_type": "seed_dev",
+        "source_id": "operation:job-closeout",
+    },
+]
+
+
 SEED_EVIDENCE_FILES: list[dict[str, Any]] = [
     {
         "legacy_id": "evidence_file:ptpm-master-service-agreement",
@@ -411,6 +471,7 @@ def seed_counts() -> dict[str, int]:
         "clients": len(SEED_CLIENTS),
         "sites": len(SEED_SITES),
         "jobs": len(SEED_JOBS),
+        "reminders": len(SEED_REMINDERS),
         "evidence_files": len(SEED_EVIDENCE_FILES),
     }
 
@@ -509,6 +570,14 @@ def _job_values(
 
 def reset_seed(session: Session) -> dict[str, int]:
     deleted: dict[str, int] = {}
+    reminder_result = session.execute(
+        delete(Reminder).where(
+            Reminder.organization_id == DEMO_ORGANIZATION_ID,
+            Reminder.id.in_([record["id"] for record in SEED_REMINDERS]),
+        ),
+    )
+    deleted[Reminder.__tablename__] = reminder_result.rowcount or 0
+
     for model in (EvidenceFile, Job, Site, Client):
         result = session.execute(
             delete(model).where(
@@ -519,6 +588,58 @@ def reset_seed(session: Session) -> dict[str, int]:
         deleted[model.__tablename__] = result.rowcount or 0
     session.flush()
     return deleted
+
+
+def _reminder_values(
+    record: dict[str, Any],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+) -> dict[str, Any]:
+    values = {
+        key: value
+        for key, value in record.items()
+        if key not in {"id", "target_type", "target_legacy_id"}
+    }
+    target_type = record["target_type"]
+    target_legacy_id = record["target_legacy_id"]
+    values["client_id"] = None
+    values["site_id"] = None
+    values["job_id"] = None
+    if target_type == "client":
+        values["client_id"] = client_by_legacy_id[target_legacy_id].id
+    elif target_type == "site":
+        values["site_id"] = site_by_legacy_id[target_legacy_id].id
+    elif target_type == "job":
+        values["job_id"] = job_by_legacy_id[target_legacy_id].id
+    else:
+        raise RuntimeError(f"Unsupported reminder target_type: {target_type}")
+    return values
+
+
+def _upsert_seed_reminder(
+    session: Session,
+    record: dict[str, Any],
+    values: dict[str, Any],
+) -> Reminder:
+    instance = session.get(Reminder, record["id"])
+    if instance is None:
+        instance = Reminder(
+            id=record["id"],
+            organization_id=DEMO_ORGANIZATION_ID,
+            **values,
+        )
+        session.add(instance)
+    else:
+        if instance.organization_id != DEMO_ORGANIZATION_ID:
+            raise RuntimeError(f"Refusing to overwrite reminder row with id {record['id']}.")
+        for field, value in values.items():
+            setattr(instance, field, value)
+        instance.archived_at = None
+        session.add(instance)
+
+    session.flush()
+    return instance
 
 
 def _evidence_file_values(
@@ -574,6 +695,18 @@ def seed(session: Session) -> Organization:
         )
         job_by_legacy_id[record["legacy_id"]] = job
 
+    for record in SEED_REMINDERS:
+        _upsert_seed_reminder(
+            session,
+            record,
+            _reminder_values(
+                record,
+                client_by_legacy_id,
+                site_by_legacy_id,
+                job_by_legacy_id,
+            ),
+        )
+
     for record in SEED_EVIDENCE_FILES:
         _upsert_seed_row(
             session,
@@ -613,7 +746,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(
                 "Deleted seed_dev rows: "
                 f"{deleted['clients']} clients, {deleted['sites']} sites, "
-                f"{deleted['jobs']} jobs, {deleted['evidence_files']} files.",
+                f"{deleted['jobs']} jobs, {deleted['reminders']} reminders, "
+                f"{deleted['evidence_files']} files.",
             )
 
         organization = seed(session)
@@ -622,7 +756,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             "Seeded demo CRM data: "
             f"{counts['organizations']} organization, {counts['clients']} clients, "
             f"{counts['sites']} sites, {counts['jobs']} jobs, "
-            f"{counts['evidence_files']} files.",
+            f"{counts['reminders']} reminders, {counts['evidence_files']} files.",
         )
         print(f"organization_id={organization.id}")
         print(f"NEXT_PUBLIC_DEMO_ORG_ID={organization.id}")

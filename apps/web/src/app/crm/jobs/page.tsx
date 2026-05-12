@@ -11,14 +11,26 @@ import StatusBadge from "@/components/crm/StatusBadge";
 import SectionHeader from "@/components/ui/SectionHeader";
 import {
   archiveJob,
+  archiveReminder,
+  completeReminder,
   createJob,
+  createReminder,
   demoOrganizationId,
   listClients,
   listJobs,
+  listReminders,
   listSites,
   updateJob,
 } from "@/lib/api";
-import type { Client, Job, JobFormInput, Site } from "@/lib/types";
+import type {
+  Client,
+  Job,
+  JobFormInput,
+  Reminder,
+  ReminderCreate,
+  ReminderPriority,
+  Site,
+} from "@/lib/types";
 import {
   dangerButtonClass,
   primaryButtonClass as buttonClass,
@@ -40,6 +52,14 @@ type JobFormState = {
   drive_folder_url: string;
 };
 
+type JobReminderFormState = {
+  title: string;
+  description: string;
+  priority: ReminderPriority;
+  due_at: string;
+  reminder_at: string;
+};
+
 const jobStatusOptions = [
   "draft",
   "scheduled",
@@ -48,6 +68,8 @@ const jobStatusOptions = [
   "completed",
   "cancelled",
 ];
+
+const reminderPriorityOptions: ReminderPriority[] = ["high", "medium", "low"];
 
 const columns: EntityColumn<Job>[] = [
   {
@@ -100,6 +122,34 @@ function formatDate(value: string | null): string {
   return `${month}/${day}/${year}`;
 }
 
+function localInputToIso(value: string): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) {
+    return "Not set";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 function emptyForm(defaultClientId = "", defaultSiteId = ""): JobFormState {
   return {
     client_id: defaultClientId,
@@ -112,6 +162,16 @@ function emptyForm(defaultClientId = "", defaultSiteId = ""): JobFormState {
     scope: "",
     notes: "",
     drive_folder_url: "",
+  };
+}
+
+function emptyJobReminderForm(): JobReminderFormState {
+  return {
+    title: "",
+    description: "",
+    priority: "medium",
+    due_at: "",
+    reminder_at: "",
   };
 }
 
@@ -145,6 +205,18 @@ function payloadFromForm(form: JobFormState): JobFormInput {
   };
 }
 
+function reminderPayloadFromForm(jobId: string, form: JobReminderFormState): ReminderCreate {
+  return {
+    job_id: jobId,
+    title: form.title.trim(),
+    description: optional(form.description),
+    priority: form.priority,
+    status: "open",
+    due_at: localInputToIso(form.due_at),
+    reminder_at: localInputToIso(form.reminder_at),
+  };
+}
+
 function SetupMessage() {
   return (
     <AppShell>
@@ -169,6 +241,12 @@ export default function JobsPage() {
   const [mode, setMode] = useState<FormMode>("view");
   const [form, setForm] = useState<JobFormState>(emptyForm());
   const [statusDraft, setStatusDraft] = useState("draft");
+  const [jobReminders, setJobReminders] = useState<Reminder[]>([]);
+  const [jobRemindersLoading, setJobRemindersLoading] = useState(false);
+  const [jobReminderFormOpen, setJobReminderFormOpen] = useState(false);
+  const [jobReminderForm, setJobReminderForm] = useState<JobReminderFormState>(
+    emptyJobReminderForm(),
+  );
 
   const clientNameById = useMemo(
     () => new Map(clients.map((client) => [client.id, client.name])),
@@ -233,6 +311,29 @@ export default function JobsPage() {
     }
   }, [organizationId, search, statusFilter]);
 
+  const loadSelectedJobReminders = useCallback(async () => {
+    if (!organizationId || !selectedJobId) {
+      setJobReminders([]);
+      return;
+    }
+
+    setJobRemindersLoading(true);
+    try {
+      const response = await listReminders({
+        organizationId,
+        jobId: selectedJobId,
+        limit: 25,
+      });
+      setJobReminders(response.items);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Unable to load job reminders.",
+      );
+    } finally {
+      setJobRemindersLoading(false);
+    }
+  }, [organizationId, selectedJobId]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadReferences();
@@ -263,6 +364,14 @@ export default function JobsPage() {
     return () => window.clearTimeout(timer);
   }, [loadJobs]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadSelectedJobReminders();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadSelectedJobReminders]);
+
   if (!organizationId) {
     return <SetupMessage />;
   }
@@ -271,6 +380,7 @@ export default function JobsPage() {
     const defaultSite = sites[0];
     setMode("create");
     setForm(emptyForm(defaultSite?.client_id ?? clients[0]?.id ?? "", defaultSite?.id ?? ""));
+    setJobReminderFormOpen(false);
     setError(null);
   }
 
@@ -280,6 +390,7 @@ export default function JobsPage() {
     }
     setMode("edit");
     setForm(formFromJob(selectedJob));
+    setJobReminderFormOpen(false);
     setError(null);
   }
 
@@ -289,6 +400,7 @@ export default function JobsPage() {
     }
     setStatusDraft(selectedJob.status);
     setMode("status");
+    setJobReminderFormOpen(false);
     setError(null);
   }
 
@@ -367,6 +479,75 @@ export default function JobsPage() {
       await loadJobs();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to archive job.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startJobReminder() {
+    if (!selectedJob) {
+      return;
+    }
+    setJobReminderForm(emptyJobReminderForm());
+    setJobReminderFormOpen(true);
+    setError(null);
+  }
+
+  async function saveJobReminder() {
+    if (!selectedJob) {
+      return;
+    }
+
+    const payload = reminderPayloadFromForm(selectedJob.id, jobReminderForm);
+    if (!payload.title) {
+      setError("Reminder title is required.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await createReminder(organizationId, payload);
+      setJobReminderFormOpen(false);
+      setJobReminderForm(emptyJobReminderForm());
+      await loadSelectedJobReminders();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save reminder.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function completeJobReminder(reminder: Reminder) {
+    setSaving(true);
+    setError(null);
+    try {
+      await completeReminder(reminder.id, organizationId);
+      await loadSelectedJobReminders();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Unable to complete reminder.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function archiveJobReminder(reminder: Reminder) {
+    const confirmed = window.confirm(`Archive ${reminder.title}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await archiveReminder(reminder.id, organizationId);
+      await loadSelectedJobReminders();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Unable to archive reminder.",
+      );
     } finally {
       setSaving(false);
     }
@@ -467,6 +648,7 @@ export default function JobsPage() {
               onRowClick={(job) => {
                 setSelectedJobId(job.id);
                 setMode("view");
+                setJobReminderFormOpen(false);
               }}
               loading={loading}
               emptyTitle="No jobs found"
@@ -540,6 +722,20 @@ export default function JobsPage() {
                     ?? null
                   }
                   selectedRecordLabel={selectedJob.name}
+                />
+
+                <JobReminderPanel
+                  reminders={jobReminders}
+                  loading={jobRemindersLoading}
+                  saving={saving}
+                  formOpen={jobReminderFormOpen}
+                  form={jobReminderForm}
+                  setForm={setJobReminderForm}
+                  onAdd={startJobReminder}
+                  onCancel={() => setJobReminderFormOpen(false)}
+                  onSave={saveJobReminder}
+                  onComplete={completeJobReminder}
+                  onArchive={archiveJobReminder}
                 />
               </div>
             ) : (
@@ -786,6 +982,184 @@ function StatusForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function JobReminderPanel({
+  reminders,
+  loading,
+  saving,
+  formOpen,
+  form,
+  setForm,
+  onAdd,
+  onCancel,
+  onSave,
+  onComplete,
+  onArchive,
+}: {
+  reminders: Reminder[];
+  loading: boolean;
+  saving: boolean;
+  formOpen: boolean;
+  form: JobReminderFormState;
+  setForm: (form: JobReminderFormState) => void;
+  onAdd: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+  onComplete: (reminder: Reminder) => void;
+  onArchive: (reminder: Reminder) => void;
+}) {
+  function update(field: keyof JobReminderFormState, value: string) {
+    if (field === "priority") {
+      setForm({ ...form, priority: value as ReminderPriority });
+      return;
+    }
+    setForm({ ...form, [field]: value });
+  }
+
+  return (
+    <section className="rounded-lg border border-border-soft bg-panel-2">
+      <div className="flex items-center justify-between gap-3 border-b border-border-soft px-3 py-3">
+        <div>
+          <h3 className="text-sm font-semibold text-text">Reminders</h3>
+          <p className="mt-1 text-xs text-text-muted">
+            Local follow-ups linked to this job.
+          </p>
+        </div>
+        <button
+          type="button"
+          className={secondaryButtonClass}
+          onClick={onAdd}
+          disabled={saving}
+        >
+          Add Reminder for this Job
+        </button>
+      </div>
+
+      {formOpen ? (
+        <form
+          className="space-y-4 border-b border-border-soft px-3 py-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave();
+          }}
+        >
+          <FormField label="Title">
+            <input
+              value={form.title}
+              onChange={(event) => update("title", event.target.value)}
+              className="form-input"
+              required
+            />
+          </FormField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Priority">
+              <select
+                value={form.priority}
+                onChange={(event) => update("priority", event.target.value)}
+                className="form-input"
+              >
+                {reminderPriorityOptions.map((priority) => (
+                  <option key={priority} value={priority}>
+                    {priority}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Due Date/Time">
+              <input
+                type="datetime-local"
+                value={form.due_at}
+                onChange={(event) => update("due_at", event.target.value)}
+                className="form-input"
+              />
+            </FormField>
+          </div>
+          <FormField label="Reminder Date/Time">
+            <input
+              type="datetime-local"
+              value={form.reminder_at}
+              onChange={(event) => update("reminder_at", event.target.value)}
+              className="form-input"
+            />
+          </FormField>
+          <FormField label="Description">
+            <textarea
+              value={form.description}
+              onChange={(event) => update("description", event.target.value)}
+              className="form-textarea"
+              rows={3}
+            />
+          </FormField>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className={secondaryButtonClass}
+              onClick={onCancel}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button type="submit" className={buttonClass} disabled={saving}>
+              {saving ? "Saving..." : "Save Reminder"}
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      <div className="space-y-3 px-3 py-3">
+        {loading ? (
+          <p className="text-sm text-text-muted">Loading reminders...</p>
+        ) : reminders.length > 0 ? (
+          reminders.map((reminder) => (
+            <div
+              key={reminder.id}
+              className="rounded-md border border-border-soft bg-panel px-3 py-3"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="min-w-0 flex-1 text-sm font-semibold text-text">
+                  {reminder.title}
+                </p>
+                <StatusBadge status={reminder.status} />
+              </div>
+              <p className="mt-2 text-xs text-text-muted">
+                Due {formatDateTime(reminder.due_at)}
+              </p>
+              {reminder.description ? (
+                <p className="mt-2 text-sm text-text-secondary">
+                  {reminder.description}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                {reminder.status !== "completed" ? (
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    onClick={() => onComplete(reminder)}
+                    disabled={saving}
+                  >
+                    Mark Complete
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={dangerButtonClass}
+                  onClick={() => onArchive(reminder)}
+                  disabled={saving}
+                >
+                  Archive
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-text-muted">
+            No reminders linked to this job yet.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 

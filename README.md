@@ -87,6 +87,7 @@ Open:
 - `http://127.0.0.1:3000/crm/clients`
 - `http://127.0.0.1:3000/crm/sites`
 - `http://127.0.0.1:3000/crm/jobs`
+- `http://127.0.0.1:3000/schedule`
 
 Optional API smoke after the API is running:
 
@@ -127,6 +128,7 @@ The first usable CRM UI is available at:
 - `http://localhost:3000/crm/clients`
 - `http://localhost:3000/crm/sites`
 - `http://localhost:3000/crm/jobs`
+- `http://localhost:3000/schedule`
 
 ### API
 
@@ -177,7 +179,7 @@ API checks:
 .\.venv\Scripts\python scripts\smoke_crm_api.py
 ```
 
-First CRM API routes are available for clients, sites, and jobs under `/v1`. Until auth is added, create requests include `organization_id` in the JSON body, while list/get/patch/delete requests pass `organization_id` as a query parameter.
+First CRM API routes are available for clients, sites, jobs, files, and reminders under `/v1`. Until auth is added, create requests include `organization_id` in the JSON body, while list/get/patch/delete requests pass `organization_id` as a query parameter.
 
 Optional dev seed data:
 
@@ -186,7 +188,13 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The seed script creates one deterministic organization, three clients, five sites, and eight jobs, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only rows marked `legacy_source='seed_dev'` for the demo organization before reseeding.
+The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, and seven file metadata rows, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
+
+### Local Scheduling And Reminders
+
+The `/schedule` page manages local-only reminders linked to exactly one Client, Site, or Job. It groups reminders by Overdue, Today, Upcoming, and Completed, supports create/edit, mark complete, archive, and filters by status or priority. The Jobs detail panel also shows job-linked reminders and can add a reminder for the selected job.
+
+This phase deliberately does not add Outlook, Gmail, Calendar sync, external event creation, email sending, push notifications, or AI follow-up buttons. The list view shipped before a calendar grid so the core reminder workflow stays fast and safe while provider sync remains deferred.
 
 V1 CRM migration Phase M1 is dry-run only. It inspects the V1 SQLite CRM data and writes no V2 database rows:
 

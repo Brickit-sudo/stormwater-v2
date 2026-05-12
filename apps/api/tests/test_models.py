@@ -10,6 +10,7 @@ from app.models import (
     Observation,
     Organization,
     OrganizationMembership,
+    Reminder,
     Report,
     Site,
     User,
@@ -26,6 +27,7 @@ EXPECTED_TABLES = {
     "observations",
     "organization_memberships",
     "organizations",
+    "reminders",
     "reports",
     "sites",
     "users",
@@ -58,6 +60,12 @@ EXPECTED_INDEXES = {
     "ix_reports_organization_id_job_id",
     "ix_reports_organization_id_site_id",
     "ix_reports_organization_id_status",
+    "ix_reminders_organization_id_due_at",
+    "ix_reminders_organization_id_status",
+    "ix_reminders_organization_id_priority",
+    "ix_reminders_organization_id_job_id",
+    "ix_reminders_organization_id_site_id",
+    "ix_reminders_organization_id_client_id",
 }
 
 
@@ -86,5 +94,6 @@ def test_core_model_classes_import_cleanly() -> None:
     assert BmpSystem.__tablename__ == "bmp_systems"
     assert Observation.__tablename__ == "observations"
     assert EvidenceFile.__tablename__ == "evidence_files"
+    assert Reminder.__tablename__ == "reminders"
     assert Report.__tablename__ == "reports"
     assert ActivityLog.__tablename__ == "activity_log"

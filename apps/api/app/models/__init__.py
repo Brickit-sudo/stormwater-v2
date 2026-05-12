@@ -7,6 +7,7 @@ from app.models.evidence_file import EvidenceFile
 from app.models.job import Job
 from app.models.observation import Observation
 from app.models.organization import Organization
+from app.models.reminder import Reminder
 from app.models.report import Report
 from app.models.site import Site
 from app.models.user import OrganizationMembership, User
@@ -21,6 +22,7 @@ __all__ = [
     "Observation",
     "Organization",
     "OrganizationMembership",
+    "Reminder",
     "Report",
     "Site",
     "User",

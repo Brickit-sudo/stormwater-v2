@@ -75,7 +75,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The deterministic seed creates one organization, three clients, five sites, eight jobs, and seven `evidence_files` metadata rows, all tagged with `legacy_source='seed_dev'`. The seven file rows include client-level, site-level, and job-level examples to exercise the Drive/File panel on each CRM detail view. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's `seed_dev` rows (clients, sites, jobs, and evidence files) before reseeding.
+The deterministic seed creates one organization, three clients, five sites, eight jobs, four local reminders, and seven `evidence_files` metadata rows. The seven file rows include client-level, site-level, and job-level examples to exercise the Drive/File panel on each CRM detail view. The four reminders include overdue, due-today, upcoming, and completed examples for `/schedule`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
 
 Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 
@@ -167,6 +167,11 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `GET /v1/jobs/{job_id}`
 - `PATCH /v1/jobs/{job_id}`
 - `DELETE /v1/jobs/{job_id}`
+- `GET /v1/reminders`
+- `POST /v1/reminders`
+- `GET /v1/reminders/{reminder_id}`
+- `PATCH /v1/reminders/{reminder_id}`
+- `DELETE /v1/reminders/{reminder_id}`
 - `GET /v1/files`
 - `POST /v1/files`
 - `GET /v1/files/{file_id}`
@@ -174,6 +179,14 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `DELETE /v1/files/{file_id}`
 
 The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` table. This phase does not implement binary upload, Google Drive OAuth, folder creation, folder scanning, or sync. `DELETE` is a soft archive (`archived_at`) - it never touches the actual file in Google Drive.
+
+The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
+
+Filter the reminder list with `status`, `priority`, `client_id`, `site_id`, `job_id`, `due_before`, and `due_after` query params:
+
+```
+GET /v1/reminders?organization_id=<uuid>&job_id=<job-uuid>
+```
 
 Filter the list with `client_id`, `site_id`, or `job_id` query params:
 

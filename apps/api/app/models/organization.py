@@ -24,3 +24,4 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     evidence_files: Mapped[list["EvidenceFile"]] = relationship(back_populates="organization")
     reports: Mapped[list["Report"]] = relationship(back_populates="organization")
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="organization")
+    reminders: Mapped[list["Reminder"]] = relationship(back_populates="organization")

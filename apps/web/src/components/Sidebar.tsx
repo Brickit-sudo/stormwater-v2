@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { label: "Clients", href: "/crm/clients", description: "Accounts" },
   { label: "Sites", href: "/crm/sites", description: "Locations" },
   { label: "Jobs", href: "/crm/jobs", description: "Work orders" },
+  { label: "Schedule", href: "/schedule", description: "Reminders" },
 ];
 
 export default function Sidebar() {

@@ -42,7 +42,7 @@ Use green only for primary actions, active navigation, selected rows, and succes
 
 - Sidebar is fixed on desktop and uses the darkest surface.
 - Brand appears at the top with the subtitle `Field Service Admin`.
-- Navigation is limited to Clients, Sites, and Jobs.
+- Navigation is limited to Clients, Sites, Jobs, and Schedule.
 - Active navigation uses `--green-soft`, green text, and a small green status dot.
 - Do not add notification, profile, settings, or placeholder nav controls.
 
@@ -92,6 +92,10 @@ Use `StatusBadge` for CRM statuses.
 | Jobs | in_review | warning |
 | Jobs | completed | success |
 | Jobs | cancelled | danger |
+| Reminders | open | info |
+| Reminders | snoozed | warning |
+| Reminders | completed | success |
+| Reminders | archived | muted |
 
 Unknown statuses fall back to muted.
 
@@ -104,6 +108,6 @@ Unknown statuses fall back to muted.
 
 ## No Fake Buttons
 
-Every visible normal-user action must do real work. Do not render placeholder controls for Export CSV, New Service Job, Emergency Service, API connected, notifications, profile, maps, Drive upload, Drive sync, folder scan, reports, photosheets, invoices, or quotes.
+Every visible normal-user action must do real work. Do not render placeholder controls for Export CSV, New Service Job, Emergency Service, API connected, notifications, profile, maps, Drive upload, Drive sync, folder scan, Outlook sync, Gmail sync, calendar sync, reports, photosheets, invoices, or quotes.
 
 Future pages should follow this design system before adding new primitives.

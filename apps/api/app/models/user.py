@@ -21,6 +21,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, ArchivedMixin, Base):
         back_populates="user",
     )
     assigned_jobs: Mapped[list["Job"]] = relationship(back_populates="assignee")
+    assigned_reminders: Mapped[list["Reminder"]] = relationship(back_populates="assignee")
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="actor")
 
 

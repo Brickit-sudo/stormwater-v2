@@ -60,3 +60,4 @@ class Site(
     bmp_systems: Mapped[list["BmpSystem"]] = relationship(back_populates="site")
     evidence_files: Mapped[list["EvidenceFile"]] = relationship(back_populates="site")
     reports: Mapped[list["Report"]] = relationship(back_populates="site")
+    reminders: Mapped[list["Reminder"]] = relationship(back_populates="site")

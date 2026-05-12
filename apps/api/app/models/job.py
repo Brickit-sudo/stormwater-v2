@@ -68,3 +68,4 @@ class Job(
     observations: Mapped[list["Observation"]] = relationship(back_populates="job")
     evidence_files: Mapped[list["EvidenceFile"]] = relationship(back_populates="job")
     reports: Mapped[list["Report"]] = relationship(back_populates="job")
+    reminders: Mapped[list["Reminder"]] = relationship(back_populates="job")
