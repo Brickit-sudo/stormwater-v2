@@ -29,6 +29,14 @@ from app.schemas.evidence_file import (
     EvidenceFileUpdate,
 )
 from app.schemas.job import JobBase, JobCreate, JobListResponse, JobRead, JobUpdate
+from app.schemas.outlook_import import (
+    OutlookImportSelectedRequest,
+    OutlookImportSelectedResponse,
+    OutlookPreviewMessage,
+    OutlookPreviewRequest,
+    OutlookPreviewResponse,
+    OutlookStatusResponse,
+)
 from app.schemas.reminder import (
     ReminderBase,
     ReminderCreate,
@@ -79,6 +87,12 @@ __all__ = [
     "JobListResponse",
     "JobRead",
     "JobUpdate",
+    "OutlookImportSelectedRequest",
+    "OutlookImportSelectedResponse",
+    "OutlookPreviewMessage",
+    "OutlookPreviewRequest",
+    "OutlookPreviewResponse",
+    "OutlookStatusResponse",
     "ReminderBase",
     "ReminderCreate",
     "ReminderListResponse",

@@ -5,6 +5,7 @@ import type { WorkView } from "./WorkHubShell";
 const navItems: Array<{ id: WorkView; label: string; description: string }> = [
   { id: "files", label: "Files", description: "Evidence links" },
   { id: "emails", label: "Emails", description: "Local messages" },
+  { id: "outlook", label: "Outlook Import", description: "Preview first" },
   { id: "drafts", label: "AI Drafts", description: "Manual drafts" },
   { id: "batches", label: "Import Batches", description: "Local history" },
 ];

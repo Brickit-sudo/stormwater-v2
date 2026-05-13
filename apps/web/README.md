@@ -74,7 +74,7 @@ Open:
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.
 - `/schedule` lists local reminders grouped by Overdue, Today, Upcoming, and Completed; it supports New, Edit, Mark Complete, Archive, status filtering, and priority filtering.
 - `/map` shows non-archived sites with stored coordinates on a lazy-loaded Leaflet map, supports real status/client filters, manual Refresh Map, marker selection, and an Open Sites link.
-- `/work` shows Files, Emails, AI Drafts, and Import Batches. Emails are local records with paginated search/filtering and selected-message preview. AI Drafts are manual storage only. Import Batches show local metadata and clearly note that Outlook import is not connected yet.
+- `/work` shows Files, Emails, Outlook Import, AI Drafts, and Import Batches. Emails are local records with paginated search/filtering and selected-message preview. Outlook Import is explicit preview/import-selected only. AI Drafts are manual storage only. Import Batches show local metadata from seed and imports.
 
 The Jobs detail panel also shows a compact reminders section for the selected job. It can add a reminder for that job, mark job reminders complete, and archive them. Editing reminders stays on `/schedule`.
 
@@ -100,6 +100,8 @@ This phase is metadata-only. There is no binary upload, no Google Drive OAuth, n
 
 ## Work Hub
 
-Work Hub is local/providerless in this phase. It does not connect to Outlook, call Microsoft Graph, sync Gmail, send email, create Outlook drafts, scan a mailbox, download attachments, or run AI generation.
+Work Hub is local-first in this phase. Outlook Import lives only under `/work`; it does not run from CRM pages, does not poll on page load, and does not import automatically. The status card reads API configuration, Preview Outlook Emails and Refresh Preview make explicit bounded preview requests, and Import Selected Emails writes only checked preview rows into local `email_messages`.
 
-Every visible Work Hub action does local work: switch views, search/filter local emails, paginate lists, link an email to a Client/Site/Job, create/edit/archive manual drafts, mark drafts reviewed/used, archive email records, and open stored file/link URLs.
+The preview MVP requires Microsoft Graph env vars in `apps/api/.env` plus a request-supplied access token. There is no full OAuth UI yet, no Gmail, no Sync All Mailbox, no sending, no Outlook draft creation, no attachment download, no OneDrive/SharePoint scan, and no AI generation.
+
+Every visible Work Hub action does real work: switch views, search/filter local emails, preview Outlook emails on request, import selected preview rows, paginate lists, link an email to a Client/Site/Job, create/edit/archive manual drafts, mark drafts reviewed/used, archive email records, and open stored file/link URLs.

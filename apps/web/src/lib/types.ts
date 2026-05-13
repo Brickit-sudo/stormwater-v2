@@ -402,6 +402,67 @@ export type EmailImportBatchListOptions = {
   offset?: number;
 };
 
+export type OutlookStatus = {
+  configured: boolean;
+  configured_fields: string[];
+  missing_fields: string[];
+  graph_base_url: string;
+  auth_mode: string;
+  message: string;
+};
+
+export type OutlookPreviewMessage = {
+  provider_message_id: string;
+  provider_conversation_id: string | null;
+  internet_message_id: string | null;
+  subject: string;
+  sender: string;
+  recipients: Array<Record<string, unknown>>;
+  received_at: string | null;
+  snippet: string | null;
+  body_preview: string | null;
+  body_text: string | null;
+  has_attachments: boolean;
+  web_link: string | null;
+};
+
+export type OutlookPreviewInput = {
+  organization_id: UUID;
+  search_query?: string | null;
+  folder_id?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  limit?: number;
+  access_token?: string | null;
+};
+
+export type OutlookPreviewResponse = {
+  items: OutlookPreviewMessage[];
+  count: number;
+  limit: number;
+  capped: boolean;
+};
+
+export type OutlookImportSelectedInput = {
+  organization_id: UUID;
+  search_query?: string | null;
+  folder_id?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  limit?: number;
+  selected_messages: OutlookPreviewMessage[];
+};
+
+export type OutlookImportSelectedResponse = {
+  batch: EmailImportBatch;
+  imported_messages: EmailMessage[];
+  imported_count: number;
+  skipped_count: number;
+  duplicate_count: number;
+  error_count: number;
+  capped: boolean;
+};
+
 export type AiDraftStatus = "draft" | "reviewed" | "used" | "archived";
 
 export type AiDraft = {

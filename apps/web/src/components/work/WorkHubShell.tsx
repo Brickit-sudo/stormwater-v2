@@ -9,9 +9,10 @@ import AiDraftsWorkView from "./AiDraftsWorkView";
 import EmailsWorkView from "./EmailsWorkView";
 import FilesWorkView from "./FilesWorkView";
 import ImportBatchesWorkView from "./ImportBatchesWorkView";
+import OutlookImportWorkView from "./OutlookImportWorkView";
 import WorkNav from "./WorkNav";
 
-export type WorkView = "files" | "emails" | "drafts" | "batches";
+export type WorkView = "files" | "emails" | "outlook" | "drafts" | "batches";
 
 type WorkHubShellProps = {
   organizationId: UUID;
@@ -37,6 +38,9 @@ export default function WorkHubShell({ organizationId }: WorkHubShellProps) {
           ) : null}
           {activeView === "emails" ? (
             <EmailsWorkView organizationId={organizationId} />
+          ) : null}
+          {activeView === "outlook" ? (
+            <OutlookImportWorkView organizationId={organizationId} />
           ) : null}
           {activeView === "drafts" ? (
             <AiDraftsWorkView organizationId={organizationId} />

@@ -18,6 +18,18 @@ Set `DATABASE_URL` in `.env` for local Postgres:
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 ```
 
+Optional Outlook Import Preview settings:
+
+```text
+MICROSOFT_TENANT_ID=<tenant id>
+MICROSOFT_CLIENT_ID=<app client id>
+MICROSOFT_CLIENT_SECRET=<app client secret>
+MICROSOFT_REDIRECT_URI=http://localhost:8000/v1/outlook/oauth/callback
+MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
+```
+
+These values are optional for normal API startup and tests. If they are missing, only the Outlook import endpoints return a clear configuration error. Do not commit real `.env` secrets.
+
 ## Database
 
 Alembic is configured under `apps/api/alembic` and reads the same `DATABASE_URL`.
@@ -181,6 +193,9 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `GET /v1/email-import-batches`
 - `POST /v1/email-import-batches`
 - `GET /v1/email-import-batches/{batch_id}`
+- `GET /v1/outlook/status`
+- `POST /v1/outlook/preview`
+- `POST /v1/outlook/import-selected`
 - `GET /v1/email-messages`
 - `POST /v1/email-messages`
 - `GET /v1/email-messages/{email_message_id}`
@@ -199,7 +214,17 @@ The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` 
 
 The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
 
-The Work Hub email endpoints are local/providerless in this phase. `/v1/email-messages` stores seeded or manually created local message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores manual draft text linked to Client/Site/Job/Email records; it does not generate text, send email, or create Outlook drafts. `/v1/email-import-batches` stores local batch metadata only. Outlook OAuth and Microsoft Graph import are deferred to a future bounded import preview phase.
+The Work Hub email endpoints are local-first. `/v1/email-messages` stores seeded, manual, or explicitly imported Outlook message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores manual draft text linked to Client/Site/Job/Email records; it does not generate text, send email, or create Outlook drafts. `/v1/email-import-batches` stores local batch metadata.
+
+### Outlook Import Preview MVP
+
+Outlook import is bounded to explicit Work Hub requests:
+
+- `GET /v1/outlook/status` reports Microsoft Graph env status and never returns secrets.
+- `POST /v1/outlook/preview` requires `organization_id`, a request body, configured Microsoft env vars, and a request-supplied access token for this MVP. It calls Microsoft Graph only for that explicit preview, caps `limit` at 100, and writes nothing locally.
+- `POST /v1/outlook/import-selected` accepts selected preview messages, creates an `email_import_batches` row, creates new `email_messages`, and skips duplicates by `provider_message_id` and `internet_message_id`.
+
+This phase does not implement background mailbox sync, delta query, polling, Gmail, email sending, Outlook draft creation, attachment downloads, OneDrive/SharePoint scanning, or AI generation. Tests mock Graph and do not require a real Outlook account.
 
 Filter the reminder list with `status`, `priority`, `client_id`, `site_id`, `job_id`, `due_before`, and `due_after` query params:
 

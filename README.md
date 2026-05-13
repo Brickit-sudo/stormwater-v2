@@ -50,6 +50,18 @@ Set `apps\api\.env`:
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 ```
 
+Optional Outlook Import Preview settings for `/work`:
+
+```text
+MICROSOFT_TENANT_ID=<tenant id>
+MICROSOFT_CLIENT_ID=<app client id>
+MICROSOFT_CLIENT_SECRET=<app client secret>
+MICROSOFT_REDIRECT_URI=http://localhost:8000/v1/outlook/oauth/callback
+MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
+```
+
+Leave these blank to run the CRM without Outlook import. Real Microsoft secrets belong only in local `.env`, never in git.
+
 Run migrations and seed deterministic CRM demo data:
 
 ```powershell
@@ -196,9 +208,9 @@ The seed script creates one deterministic organization, three clients, five site
 
 ### Work Hub And Email Intelligence
 
-The `/work` route is a local, providerless Work Hub. It shows existing file links, seeded/local email records, manual AI drafts, and local import batch metadata. It does not connect to Outlook yet, does not call Microsoft Graph, does not sync a mailbox, does not send email, and does not generate AI text.
+The `/work` route is the only place Outlook import appears. It shows existing file links, seeded/local email records, manual AI drafts, local import batch metadata, and an Outlook Import view. Outlook import is preview/import-selected only: status reads local env configuration, preview calls Microsoft Graph only after a button click and requires a request-supplied MVP access token, and import writes only selected preview messages to local `email_messages` with an `email_import_batches` row.
 
-This foundation prepares for a future bounded Outlook import preview. The next phase should connect Microsoft Graph only for preview/import, with explicit limits and dedupe, after auth and organization scoping are ready.
+There is no background mailbox sync, page-load polling, Gmail, email sending, Outlook draft creation, attachment download, OneDrive/SharePoint scan, or AI generation in this phase. Future phases can add OAuth UI/token storage, delta query, change notifications, and pushing approved local AI drafts to Outlook drafts.
 
 ### Local Scheduling And Reminders
 

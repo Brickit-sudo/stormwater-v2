@@ -24,6 +24,11 @@ import type {
   ListResponse,
   MapSite,
   MapSiteListOptions,
+  OutlookImportSelectedInput,
+  OutlookImportSelectedResponse,
+  OutlookPreviewInput,
+  OutlookPreviewResponse,
+  OutlookStatus,
   Reminder,
   ReminderCreate,
   ReminderListOptions,
@@ -647,5 +652,27 @@ export function createEmailImportBatch(
   return apiRequest<EmailImportBatch>("/v1/email-import-batches", {
     method: "POST",
     body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function getOutlookStatus(): Promise<OutlookStatus> {
+  return apiRequest<OutlookStatus>("/v1/outlook/status");
+}
+
+export function previewOutlookMessages(
+  input: OutlookPreviewInput,
+): Promise<OutlookPreviewResponse> {
+  return apiRequest<OutlookPreviewResponse>("/v1/outlook/preview", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function importSelectedOutlookMessages(
+  input: OutlookImportSelectedInput,
+): Promise<OutlookImportSelectedResponse> {
+  return apiRequest<OutlookImportSelectedResponse>("/v1/outlook/import-selected", {
+    method: "POST",
+    body: input,
   });
 }

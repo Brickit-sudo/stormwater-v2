@@ -12,6 +12,14 @@ class Settings(BaseSettings):
         default="http://localhost:3000",
         validation_alias="CORS_ORIGINS",
     )
+    microsoft_tenant_id: str | None = Field(default=None, validation_alias="MICROSOFT_TENANT_ID")
+    microsoft_client_id: str | None = Field(default=None, validation_alias="MICROSOFT_CLIENT_ID")
+    microsoft_client_secret: str | None = Field(default=None, validation_alias="MICROSOFT_CLIENT_SECRET")
+    microsoft_redirect_uri: str | None = Field(default=None, validation_alias="MICROSOFT_REDIRECT_URI")
+    microsoft_graph_base_url: str = Field(
+        default="https://graph.microsoft.com/v1.0",
+        validation_alias="MICROSOFT_GRAPH_BASE_URL",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

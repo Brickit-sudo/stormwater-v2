@@ -9,6 +9,7 @@ from app.routers import (
     evidence_files,
     health,
     jobs,
+    outlook_import,
     reminders,
     sites,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "evidence_files",
     "health",
     "jobs",
+    "outlook_import",
     "reminders",
     "sites",
 ]
