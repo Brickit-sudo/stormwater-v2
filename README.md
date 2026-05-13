@@ -146,6 +146,7 @@ npm run dev
 
 Open:
 
+- `http://127.0.0.1:3000/roadmap`
 - `http://127.0.0.1:3000/crm/clients`
 - `http://127.0.0.1:3000/crm/sites`
 - `http://127.0.0.1:3000/crm/jobs`
@@ -262,7 +263,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, seven file metadata rows, one local email import batch, five local email messages, and three AI drafts, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
+The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, seven file metadata rows, one local email import batch, five local email messages, three AI drafts, 21 product ideas, and eight product decisions, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
 
 ### Work Hub And Email Intelligence
 
@@ -314,6 +315,14 @@ cd apps\api
 ```
 
 This is validation only: no database writes, no V1 apply, no provider calls, no Drive or mailbox crawl, and no report generation.
+
+### Internal Product Roadmap
+
+V2 includes an internal `/roadmap` page for product ideas, deferred work, boss
+feedback, and product decisions. It stores `product_ideas` and
+`product_decisions` in the local API, seeds current roadmap examples, and is not
+client-facing. Do not put secrets, tokens, or private client details into
+roadmap notes.
 
 Example:
 

@@ -30,6 +30,8 @@ EXPECTED_COUNTS = {
     "email_messages": 5,
     "ai_drafts": 3,
     "email_import_batches": 1,
+    "product_ideas": 21,
+    "product_decisions": 8,
 }
 VALID_READINESS_STATUSES = {"ready", "needs_attention", "blocked"}
 
@@ -114,6 +116,9 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     email_messages = _get_json(base_url, "/v1/email-messages", query)
     ai_drafts = _get_json(base_url, "/v1/ai-drafts", query)
     email_import_batches = _get_json(base_url, "/v1/email-import-batches", query)
+    product_ideas = _get_json(base_url, "/v1/product-ideas", query)
+    boss_demo_ideas = _get_json(base_url, "/v1/product-ideas", {**query, "boss_demo_relevant": "true"})
+    product_decisions = _get_json(base_url, "/v1/product-decisions", query)
     integrations_status = _get_json(base_url, "/v1/integrations/status")
     ai_status = _get_json(base_url, "/v1/ai/status")
 
@@ -127,6 +132,10 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     _require_count("email messages", email_messages, EXPECTED_COUNTS["email_messages"])
     _require_count("AI drafts", ai_drafts, EXPECTED_COUNTS["ai_drafts"])
     _require_count("email import batches", email_import_batches, EXPECTED_COUNTS["email_import_batches"])
+    _require_count("product ideas", product_ideas, EXPECTED_COUNTS["product_ideas"])
+    if boss_demo_ideas.get("total", 0) < 1:
+        raise SmokeFailure("Expected at least one boss-demo-relevant product idea.")
+    _require_count("product decisions", product_decisions, EXPECTED_COUNTS["product_decisions"])
     if "outlook" not in integrations_status or "ai" not in integrations_status:
         raise SmokeFailure("Integration status response did not include outlook and ai.")
     if "enabled" not in ai_status:
@@ -216,6 +225,8 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     print(f"email messages: {email_messages['total']}")
     print(f"AI drafts: {ai_drafts['total']}")
     print(f"email import batches: {email_import_batches['total']}")
+    print(f"product ideas: {product_ideas['total']} ({boss_demo_ideas['total']} boss-demo relevant)")
+    print(f"product decisions: {product_decisions['total']}")
     print(
         "integrations: "
         f"outlook={integrations_status['outlook']['status']}, "

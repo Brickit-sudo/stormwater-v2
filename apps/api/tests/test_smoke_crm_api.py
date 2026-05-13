@@ -16,4 +16,6 @@ def test_smoke_script_defaults_match_seed_constants() -> None:
         "email_messages": 5,
         "ai_drafts": 3,
         "email_import_batches": 1,
+        "product_ideas": 21,
+        "product_decisions": 8,
     }

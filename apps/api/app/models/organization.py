@@ -35,3 +35,5 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     service_catalog: Mapped[list["ServiceCatalog"]] = relationship(back_populates="organization")
     file_categories: Mapped[list["FileCategory"]] = relationship(back_populates="organization")
     import_batches: Mapped[list["ImportBatch"]] = relationship(back_populates="organization")
+    product_ideas: Mapped[list["ProductIdea"]] = relationship(back_populates="organization")
+    product_decisions: Mapped[list["ProductDecision"]] = relationship(back_populates="organization")

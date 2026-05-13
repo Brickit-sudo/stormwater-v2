@@ -21,6 +21,7 @@ from app.models.job import Job
 from app.models.observation import Observation
 from app.models.organization import Organization
 from app.models.outlook_connection import OutlookConnection
+from app.models.product import ProductDecision, ProductIdea
 from app.models.reminder import Reminder
 from app.models.report import Report
 from app.models.site import Site
@@ -48,6 +49,8 @@ __all__ = [
     "Organization",
     "OrganizationMembership",
     "OutlookConnection",
+    "ProductDecision",
+    "ProductIdea",
     "Reminder",
     "Report",
     "Site",

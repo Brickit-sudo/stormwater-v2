@@ -80,6 +80,7 @@ Use these same-machine URLs:
 
 - App: `http://127.0.0.1:3000`
 - API health: `http://127.0.0.1:8000/health`
+- Roadmap: `http://127.0.0.1:3000/roadmap`
 - Clients: `http://127.0.0.1:3000/crm/clients`
 - Sites: `http://127.0.0.1:3000/crm/sites`
 - Jobs: `http://127.0.0.1:3000/crm/jobs`

@@ -82,6 +82,51 @@ export type ReminderStatus = "open" | "snoozed" | "completed" | "archived";
 
 export type ReminderPriority = "low" | "medium" | "high";
 
+export type ProductIdeaStatus =
+  | "new"
+  | "needs_review"
+  | "planned"
+  | "in_progress"
+  | "done"
+  | "deferred"
+  | "rejected";
+
+export type ProductDecisionStatus =
+  | "proposed"
+  | "decided"
+  | "superseded"
+  | "deferred";
+
+export type ProductIdeaPriority = "low" | "medium" | "high" | "critical";
+
+export type ProductIdeaCategory =
+  | "CRM"
+  | "Files"
+  | "Reports"
+  | "Email"
+  | "Outlook"
+  | "Gmail"
+  | "Drive"
+  | "Map"
+  | "Scheduling"
+  | "Billing"
+  | "AI"
+  | "Import"
+  | "Migration"
+  | "UX"
+  | "Security"
+  | "Performance"
+  | "Microsoft 365"
+  | "Knowledgebase";
+
+export type ProductIdeaLane =
+  | "V2"
+  | "Original Streamlit"
+  | "Migration"
+  | "Microsoft 365"
+  | "Docs"
+  | "Future";
+
 export type Reminder = {
   id: UUID;
   organization_id: UUID;
@@ -101,6 +146,89 @@ export type Reminder = {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+};
+
+export type ProductIdea = {
+  id: UUID;
+  organization_id: UUID;
+  title: string;
+  description: string | null;
+  category: ProductIdeaCategory | string;
+  lane: ProductIdeaLane | string;
+  status: ProductIdeaStatus;
+  priority: ProductIdeaPriority;
+  source: string | null;
+  owner: string | null;
+  target_version: string | null;
+  effort: string | null;
+  risk: string | null;
+  boss_demo_relevant: boolean;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type ProductIdeaInput = {
+  title: string;
+  description?: string | null;
+  category?: ProductIdeaCategory | string;
+  lane?: ProductIdeaLane | string;
+  status?: ProductIdeaStatus;
+  priority?: ProductIdeaPriority;
+  source?: string | null;
+  owner?: string | null;
+  target_version?: string | null;
+  effort?: string | null;
+  risk?: string | null;
+  boss_demo_relevant?: boolean;
+};
+
+export type ProductIdeaUpdateInput = Partial<ProductIdeaInput>;
+
+export type ProductIdeaListOptions = {
+  organizationId: UUID;
+  status?: ProductIdeaStatus;
+  priority?: ProductIdeaPriority;
+  category?: ProductIdeaCategory | string;
+  lane?: ProductIdeaLane | string;
+  bossDemoRelevant?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+export type ProductDecision = {
+  id: UUID;
+  organization_id: UUID;
+  related_idea_id: UUID | null;
+  decision_title: string;
+  decision_summary: string | null;
+  decision_reason: string | null;
+  alternatives_considered: string | null;
+  status: ProductDecisionStatus;
+  decided_at: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type ProductDecisionInput = {
+  related_idea_id?: UUID | null;
+  decision_title: string;
+  decision_summary?: string | null;
+  decision_reason?: string | null;
+  alternatives_considered?: string | null;
+  status?: ProductDecisionStatus;
+  decided_at?: string | null;
+};
+
+export type ProductDecisionUpdateInput = Partial<ProductDecisionInput>;
+
+export type ProductDecisionListOptions = {
+  organizationId: UUID;
+  status?: ProductDecisionStatus;
+  relatedIdeaId?: UUID;
+  limit?: number;
+  offset?: number;
 };
 
 export type ClientFormInput = {

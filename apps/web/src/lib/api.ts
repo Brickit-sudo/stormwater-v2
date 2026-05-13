@@ -46,6 +46,14 @@ import type {
   OutlookPreviewInput,
   OutlookPreviewResponse,
   OutlookStatus,
+  ProductDecision,
+  ProductDecisionInput,
+  ProductDecisionListOptions,
+  ProductDecisionUpdateInput,
+  ProductIdea,
+  ProductIdeaInput,
+  ProductIdeaListOptions,
+  ProductIdeaUpdateInput,
   ReportSectionDraftInput,
   ReportSectionDraftResponse,
   ReportReadiness,
@@ -306,11 +314,138 @@ function searchQuery({
   };
 }
 
+function productIdeaQuery({
+  organizationId,
+  status,
+  priority,
+  category,
+  lane,
+  bossDemoRelevant,
+  limit,
+  offset,
+}: ProductIdeaListOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    status,
+    priority,
+    category,
+    lane,
+    boss_demo_relevant: bossDemoRelevant,
+    limit,
+    offset,
+  };
+}
+
+function productDecisionQuery({
+  organizationId,
+  status,
+  relatedIdeaId,
+  limit,
+  offset,
+}: ProductDecisionListOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    status,
+    related_idea_id: relatedIdeaId,
+    limit,
+    offset,
+  };
+}
+
 export function globalSearch(
   options: GlobalSearchOptions,
 ): Promise<SearchResponse> {
   return apiRequest<SearchResponse>("/v1/search", {
     query: searchQuery(options),
+  });
+}
+
+export function listProductIdeas(
+  options: ProductIdeaListOptions,
+): Promise<ListResponse<ProductIdea>> {
+  return apiRequest<ListResponse<ProductIdea>>("/v1/product-ideas", {
+    query: productIdeaQuery(options),
+  });
+}
+
+export function getProductIdea(
+  ideaId: UUID,
+  organizationId: UUID,
+): Promise<ProductIdea> {
+  return apiRequest<ProductIdea>(`/v1/product-ideas/${ideaId}`, {
+    query: { organization_id: organizationId },
+  });
+}
+
+export function createProductIdea(
+  organizationId: UUID,
+  input: ProductIdeaInput,
+): Promise<ProductIdea> {
+  return apiRequest<ProductIdea>("/v1/product-ideas", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateProductIdea(
+  ideaId: UUID,
+  organizationId: UUID,
+  input: ProductIdeaUpdateInput,
+): Promise<ProductIdea> {
+  return apiRequest<ProductIdea>(`/v1/product-ideas/${ideaId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveProductIdea(
+  ideaId: UUID,
+  organizationId: UUID,
+): Promise<ProductIdea> {
+  return apiRequest<ProductIdea>(`/v1/product-ideas/${ideaId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listProductDecisions(
+  options: ProductDecisionListOptions,
+): Promise<ListResponse<ProductDecision>> {
+  return apiRequest<ListResponse<ProductDecision>>("/v1/product-decisions", {
+    query: productDecisionQuery(options),
+  });
+}
+
+export function createProductDecision(
+  organizationId: UUID,
+  input: ProductDecisionInput,
+): Promise<ProductDecision> {
+  return apiRequest<ProductDecision>("/v1/product-decisions", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateProductDecision(
+  decisionId: UUID,
+  organizationId: UUID,
+  input: ProductDecisionUpdateInput,
+): Promise<ProductDecision> {
+  return apiRequest<ProductDecision>(`/v1/product-decisions/${decisionId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveProductDecision(
+  decisionId: UUID,
+  organizationId: UUID,
+): Promise<ProductDecision> {
+  return apiRequest<ProductDecision>(`/v1/product-decisions/${decisionId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
   });
 }
 

@@ -72,6 +72,24 @@ function Test-HttpUrl {
     }
 }
 
+function Test-ApiDemoHealth {
+    param(
+        [string]$BaseUrl,
+        [string]$OrganizationId
+    )
+    if ([string]::IsNullOrWhiteSpace($OrganizationId)) {
+        return "skipped: demo organization id is missing"
+    }
+    $roadmapUrl = "${BaseUrl}/v1/product-ideas?organization_id=${OrganizationId}&limit=1"
+    try {
+        $response = Invoke-WebRequest -Uri $roadmapUrl -UseBasicParsing -TimeoutSec 5
+        return "OK HTTP $($response.StatusCode) - roadmap route"
+    }
+    catch {
+        return "route failed: $($_.Exception.Message)"
+    }
+}
+
 function Test-FrontendStylesheetHealth {
     param([string]$BaseUrl)
 
@@ -217,8 +235,11 @@ Show-PortListeners -Label "Frontend" -Port $WebPort
 
 Write-Section "HTTP Checks"
 $apiHealth = "http://127.0.0.1:${ApiPort}/health"
+$apiBaseUrl = "http://127.0.0.1:${ApiPort}"
 $webUrl = "http://127.0.0.1:${WebPort}"
+$demoOrganizationId = Get-EnvValue -Path $WebEnvPath -Key "NEXT_PUBLIC_DEMO_ORG_ID"
 Write-Host "API health: $apiHealth - $(Test-HttpUrl -Url $apiHealth)"
+Write-Host "API routes: $(Test-ApiDemoHealth -BaseUrl $apiBaseUrl -OrganizationId $demoOrganizationId)"
 Write-Host "Frontend:   $webUrl - $(Test-HttpUrl -Url $webUrl)"
 Write-Host "Frontend CSS: $(Test-FrontendStylesheetHealth -BaseUrl $webUrl)"
 

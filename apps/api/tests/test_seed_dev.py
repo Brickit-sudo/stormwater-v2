@@ -12,6 +12,8 @@ from app.models import (
     EvidenceFile,
     Job,
     Organization,
+    ProductDecision,
+    ProductIdea,
     Reminder,
     Site,
 )
@@ -25,6 +27,8 @@ from scripts.seed_dev import (
     SEED_EMAIL_MESSAGES,
     SEED_EMAIL_RECORD_LINKS,
     SEED_JOBS,
+    SEED_PRODUCT_DECISIONS,
+    SEED_PRODUCT_IDEAS,
     SEED_REMINDERS,
     SEED_SITES,
     reset_seed,
@@ -45,6 +49,8 @@ def test_seed_constants_have_expected_structure() -> None:
         "email_messages": 5,
         "email_record_links": 3,
         "ai_drafts": 3,
+        "product_ideas": 21,
+        "product_decisions": 8,
     }
     assert {client["status"] for client in SEED_CLIENTS} == {
         "active",
@@ -69,6 +75,12 @@ def test_seed_constants_have_expected_structure() -> None:
     assert {"linked", "unlinked"}.issubset({record["status"] for record in SEED_EMAIL_MESSAGES})
     assert len(SEED_EMAIL_RECORD_LINKS) == 3
     assert {record["status"] for record in SEED_AI_DRAFTS} == {"draft", "reviewed"}
+    assert "Auth/login for staging" in {record["title"] for record in SEED_PRODUCT_IDEAS}
+    assert "Gmail support later" in {record["title"] for record in SEED_PRODUCT_IDEAS}
+    assert "V2 is the future product." in {
+        record["decision_title"] for record in SEED_PRODUCT_DECISIONS
+    }
+    assert {record["status"] for record in SEED_PRODUCT_DECISIONS} == {"decided"}
 
 
 def test_seed_is_idempotent(db_session: Session) -> None:
@@ -85,6 +97,8 @@ def test_seed_is_idempotent(db_session: Session) -> None:
     assert db_session.query(EmailMessage).count() == 5
     assert db_session.query(EmailRecordLink).count() == 3
     assert db_session.query(AiDraft).count() == 3
+    assert db_session.query(ProductIdea).count() == 21
+    assert db_session.query(ProductDecision).count() == 8
     assert (
         db_session.query(EvidenceFile)
         .filter(EvidenceFile.legacy_source == LEGACY_SOURCE)
@@ -113,6 +127,8 @@ def test_reset_seed_deletes_only_seed_source_rows(db_session: Session) -> None:
         "email_record_links": 3,
         "email_messages": 5,
         "email_import_batches": 1,
+        "product_decisions": 8,
+        "product_ideas": 21,
         "reminders": 4,
         "evidence_files": 7,
         "jobs": 8,
@@ -133,6 +149,8 @@ def test_reset_seed_deletes_only_seed_source_rows(db_session: Session) -> None:
     assert db_session.query(EmailMessage).count() == 0
     assert db_session.query(EmailRecordLink).count() == 0
     assert db_session.query(AiDraft).count() == 0
+    assert db_session.query(ProductIdea).count() == 0
+    assert db_session.query(ProductDecision).count() == 0
     assert (
         db_session.query(EvidenceFile)
         .filter(EvidenceFile.legacy_source == LEGACY_SOURCE)

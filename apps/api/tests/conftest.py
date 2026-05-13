@@ -26,6 +26,8 @@ CRM_TABLE_NAMES = [
     "email_record_links",
     "ai_drafts",
     "outlook_connections",
+    "product_ideas",
+    "product_decisions",
 ]
 
 

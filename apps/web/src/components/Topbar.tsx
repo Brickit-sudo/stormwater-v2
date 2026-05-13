@@ -9,6 +9,10 @@ const titles: Record<string, { title: string; subtitle: string }> = {
     title: "Search",
     subtitle: "Local CRM records",
   },
+  "/roadmap": {
+    title: "Roadmap",
+    subtitle: "Internal product ideas and decisions",
+  },
   "/crm/clients": {
     title: "Clients",
     subtitle: "Accounts and their primary contacts",

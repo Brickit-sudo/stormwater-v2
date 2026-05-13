@@ -61,7 +61,7 @@ Use `--reset-seed` when you want to remove only existing `legacy_source='seed_de
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, and three AI drafts that drive the CRM, `/schedule`, `/map`, and `/work`.
+Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, three AI drafts, 21 product ideas, and eight product decisions that drive the CRM, `/schedule`, `/map`, `/work`, and `/roadmap`.
 
 ## Run
 
@@ -86,6 +86,7 @@ that the HTML and CSS chunk are both coming from the active frontend server.
 Open:
 
 - `http://127.0.0.1:3000/search`
+- `http://127.0.0.1:3000/roadmap`
 - `http://127.0.0.1:3000/crm/clients`
 - `http://127.0.0.1:3000/crm/sites`
 - `http://127.0.0.1:3000/crm/jobs`
@@ -96,6 +97,7 @@ Open:
 ## CRM Routes
 
 - `/search` searches bounded local V2 CRM records across Clients, Sites, Jobs, evidence file metadata, imported email records, AI drafts, and reminders. It runs only on explicit submit, uses `GET /v1/search`, and does not call Outlook, Gmail, Google Drive, OneDrive, SharePoint, OpenAI, or external provider search.
+- `/roadmap` manages internal product ideas, deferred work, boss feedback, and decisions. It uses local `product_ideas` and `product_decisions` rows, is not client-facing, and should not contain secrets or private client details.
 - `/crm/clients` lists, creates, edits, archives, and shows linked sites/jobs.
 - `/crm/sites` lists, creates, edits, archives, filters by client, and shows linked jobs.
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.

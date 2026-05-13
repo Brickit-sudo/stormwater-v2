@@ -47,6 +47,62 @@ function Write-Utf8NoBom {
     )
 }
 
+function Set-EnvValue {
+    param(
+        [string]$Path,
+        [string]$Key,
+        [string]$Value
+    )
+    $lines = @()
+    if (Test-Path -LiteralPath $Path) {
+        $lines = @(Get-Content -LiteralPath $Path)
+    }
+
+    $found = $false
+    $updatedLines = @(
+        foreach ($line in $lines) {
+            if ($line -match "^\s*$([regex]::Escape($Key))=") {
+                $found = $true
+                "${Key}=${Value}"
+            }
+            else {
+                $line
+            }
+        }
+    )
+
+    if (-not $found) {
+        $updatedLines += "${Key}=${Value}"
+    }
+
+    Write-Utf8NoBom -Path $Path -Lines $updatedLines
+}
+
+function Ensure-CorsOrigins {
+    $requiredOrigins = @(
+        "http://localhost:${WebPort}",
+        "http://127.0.0.1:${WebPort}"
+    )
+    $existingValue = Get-EnvValue -Path $ApiEnvPath -Key "CORS_ORIGINS"
+    $origins = @()
+    if ($existingValue) {
+        $origins += @($existingValue -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+
+    $changed = $false
+    foreach ($origin in $requiredOrigins) {
+        if ($origins -notcontains $origin) {
+            $origins += $origin
+            $changed = $true
+        }
+    }
+
+    if ($changed -or -not $existingValue) {
+        Set-EnvValue -Path $ApiEnvPath -Key "CORS_ORIGINS" -Value ($origins -join ",")
+        Write-Step "Ensured local API CORS origins for localhost and 127.0.0.1."
+    }
+}
+
 function Invoke-Checked {
     param(
         [string]$FilePath,
@@ -168,6 +224,7 @@ function Ensure-ApiEnv {
         if (-not (Get-EnvValue -Path $ApiEnvPath -Key "DATABASE_URL")) {
             Write-Warning "apps\api\.env exists but DATABASE_URL is blank or missing."
         }
+        Ensure-CorsOrigins
         return
     }
 
@@ -264,6 +321,51 @@ function Test-HttpUrl {
     }
 }
 
+function Test-ApiDemoHealth {
+    param(
+        [string]$BaseUrl,
+        [string]$OrganizationId
+    )
+
+    $healthUrl = "${BaseUrl}/health"
+    try {
+        $healthResponse = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 5
+        if ($healthResponse.StatusCode -lt 200 -or $healthResponse.StatusCode -ge 300) {
+            return [pscustomobject]@{
+                Healthy = $false
+                Message = "health returned HTTP $($healthResponse.StatusCode)"
+            }
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Healthy = $false
+            Message = "health did not respond: $($_.Exception.Message)"
+        }
+    }
+
+    $roadmapUrl = "${BaseUrl}/v1/product-ideas?organization_id=${OrganizationId}&limit=1"
+    try {
+        $roadmapResponse = Invoke-WebRequest -Uri $roadmapUrl -UseBasicParsing -TimeoutSec 5
+        if ($roadmapResponse.StatusCode -ge 200 -and $roadmapResponse.StatusCode -lt 300) {
+            return [pscustomobject]@{
+                Healthy = $true
+                Message = "health and roadmap route OK"
+            }
+        }
+        return [pscustomobject]@{
+            Healthy = $false
+            Message = "roadmap route returned HTTP $($roadmapResponse.StatusCode)"
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Healthy = $false
+            Message = "roadmap route failed: $($_.Exception.Message)"
+        }
+    }
+}
+
 function Test-FrontendStylesheetHealth {
     param([string]$BaseUrl)
 
@@ -352,9 +454,14 @@ function Start-ApiWindow {
         [string]$PidPath
     )
     $healthUrl = "http://127.0.0.1:${ApiPort}/health"
-    if (Test-HttpUrl -Url $healthUrl) {
-        Write-Step "API already responds at $healthUrl. Skipping duplicate API window."
+    $apiBaseUrl = "http://127.0.0.1:${ApiPort}"
+    $apiHealth = Test-ApiDemoHealth -BaseUrl $apiBaseUrl -OrganizationId $DemoOrganizationId
+    if ($apiHealth.Healthy) {
+        Write-Step "API already responds with current demo routes at $healthUrl. Skipping duplicate API window."
         return $null
+    }
+    if (Test-HttpUrl -Url $healthUrl) {
+        throw "API at $apiBaseUrl responds, but demo route health failed: $($apiHealth.Message). This is usually a stale FastAPI server after code changes. Stop old Python/Uvicorn processes on port $ApiPort or run .\scripts\stop-v2-demo.ps1 if they were started by the launcher, then rerun this script."
     }
     if (Test-TcpPort -Port $ApiPort) {
         throw "Port $ApiPort is already in use, but the API health check did not respond. Use -ApiPort or stop the process using that port."
@@ -369,7 +476,7 @@ function Start-ApiWindow {
         '$env:PYTHONUNBUFFERED = "1"',
         'Write-Host "Stormwater V2 API Demo"',
         "Write-Host ""Log: $LogPath""",
-        "& $(Quote-PowerShellLiteral $PythonExecutable) -m uvicorn app.main:app --reload --host 127.0.0.1 --port $ApiPort *> $(Quote-PowerShellLiteral $LogPath)"
+        "& $(Quote-PowerShellLiteral $PythonExecutable) -m uvicorn app.main:app --host 127.0.0.1 --port $ApiPort *> $(Quote-PowerShellLiteral $LogPath)"
     )
 
     $process = Start-Process -FilePath "powershell.exe" -ArgumentList @(
@@ -480,6 +587,7 @@ Write-Host ""
 Write-Host "Stormwater V2 demo URLs"
 Write-Host "  API health:  http://127.0.0.1:${ApiPort}/health"
 Write-Host "  App:         http://127.0.0.1:${WebPort}"
+Write-Host "  Roadmap:     http://127.0.0.1:${WebPort}/roadmap"
 Write-Host "  Clients:     http://127.0.0.1:${WebPort}/crm/clients"
 Write-Host "  Sites:       http://127.0.0.1:${WebPort}/crm/sites"
 Write-Host "  Jobs:        http://127.0.0.1:${WebPort}/crm/jobs"

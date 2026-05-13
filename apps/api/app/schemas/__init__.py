@@ -66,6 +66,16 @@ from app.schemas.outlook_draft import (
     OutlookDraftFromAiDraftRequest,
     OutlookDraftFromAiDraftResponse,
 )
+from app.schemas.product import (
+    ProductDecisionCreate,
+    ProductDecisionListResponse,
+    ProductDecisionRead,
+    ProductDecisionUpdate,
+    ProductIdeaCreate,
+    ProductIdeaListResponse,
+    ProductIdeaRead,
+    ProductIdeaUpdate,
+)
 from app.schemas.reminder import (
     ReminderBase,
     ReminderCreate,
@@ -142,6 +152,14 @@ __all__ = [
     "OutlookDisconnectResponse",
     "OutlookDraftFromAiDraftRequest",
     "OutlookDraftFromAiDraftResponse",
+    "ProductDecisionCreate",
+    "ProductDecisionListResponse",
+    "ProductDecisionRead",
+    "ProductDecisionUpdate",
+    "ProductIdeaCreate",
+    "ProductIdeaListResponse",
+    "ProductIdeaRead",
+    "ProductIdeaUpdate",
     "OutlookImportSelectedRequest",
     "OutlookImportSelectedResponse",
     "OutlookPreviewMessage",

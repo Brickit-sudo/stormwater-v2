@@ -16,6 +16,7 @@ from app.routers import (
     outlook_auth,
     outlook_drafts,
     outlook_import,
+    product,
     reminders,
     search,
     sites,
@@ -49,6 +50,8 @@ def create_app() -> FastAPI:
     app.include_router(outlook_auth.router)
     app.include_router(outlook_drafts.router)
     app.include_router(outlook_import.router)
+    app.include_router(product.ideas_router)
+    app.include_router(product.decisions_router)
     app.include_router(reminders.router)
     app.include_router(evidence_files.router)
     app.include_router(email_import_batches.router)

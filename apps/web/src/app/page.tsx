@@ -84,6 +84,12 @@ const quickLinks: NavCard[] = [
     label: "Find",
   },
   {
+    href: "/roadmap",
+    title: "Roadmap",
+    description: "Capture internal product ideas, boss feedback, deferred work, and decisions.",
+    label: "Plan",
+  },
+  {
     href: "/crm/clients",
     title: "Clients",
     description: "Accounts, contacts, and stored client file links.",

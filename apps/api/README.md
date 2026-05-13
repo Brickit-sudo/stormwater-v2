@@ -128,7 +128,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The deterministic seed creates one organization, three clients, five sites with public approximate map coordinates, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, three email record links, and three AI drafts covering an email reply, a report section, and a maintenance recommendation. The seeded emails include Google Drive, OneDrive, SharePoint, action-item, and linked-record examples. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
+The deterministic seed creates one organization, three clients, five sites with public approximate map coordinates, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, three email record links, three AI drafts, 21 product ideas, and eight product decisions. The seeded emails include Google Drive, OneDrive, SharePoint, action-item, and linked-record examples. The seeded roadmap examples capture internal ideas, deferred work, boss-demo-relevant items, and product decisions. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
 
 Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 
@@ -247,6 +247,15 @@ The validator reads CSV files only. It does not open a database connection, writ
 - `GET /v1/reminders/{reminder_id}`
 - `PATCH /v1/reminders/{reminder_id}`
 - `DELETE /v1/reminders/{reminder_id}`
+- `GET /v1/product-ideas`
+- `POST /v1/product-ideas`
+- `GET /v1/product-ideas/{idea_id}`
+- `PATCH /v1/product-ideas/{idea_id}`
+- `DELETE /v1/product-ideas/{idea_id}`
+- `GET /v1/product-decisions`
+- `POST /v1/product-decisions`
+- `PATCH /v1/product-decisions/{decision_id}`
+- `DELETE /v1/product-decisions/{decision_id}`
 - `GET /v1/files`
 - `POST /v1/files`
 - `GET /v1/files/{file_id}`
@@ -292,6 +301,13 @@ The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` 
 The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
 
 The `/v1/search` endpoint is local-only global search. It searches bounded, organization-scoped V2 database rows for Clients, Sites, Jobs, evidence file metadata, local email message records, AI drafts, and reminders. It never calls Outlook, Gmail, Google Drive, OneDrive, SharePoint, OpenAI, scans folders, downloads files, syncs mailboxes, or indexes external providers. `q` is required with at least two characters. `limit` defaults to `10` per type and is capped at `25`; `types` can narrow the grouped response to `clients`, `sites`, `jobs`, `files`, `emails`, `ai_drafts`, and `reminders`. Email and draft text matching uses capped local text prefixes instead of unbounded provider/body scans.
+
+The `/v1/product-ideas` and `/v1/product-decisions` endpoints manage the
+internal roadmap tracker. They are organization-scoped, soft-archive records,
+and normal lists exclude archived rows. Ideas can be filtered by `status`,
+`priority`, `category`, `lane`, and `boss_demo_relevant`. This is product
+memory only: do not store secrets, OAuth tokens, passwords, or private client
+details in roadmap notes.
 
 The Work Hub email endpoints are local-first. `/v1/email-messages` stores seeded, manual, or explicitly imported Outlook message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores review-first draft text linked to Client/Site/Job/Email records. `/v1/outlook/drafts/from-ai-draft` creates an Outlook Draft from a reviewed email-style AI draft, stores provider metadata on that local draft, and never sends. `/v1/ai/*` can generate or suggest structured outputs, but it never sends email, generates final reports, downloads attachments, or auto-links records. `/v1/email-import-batches` stores local batch metadata.
 
