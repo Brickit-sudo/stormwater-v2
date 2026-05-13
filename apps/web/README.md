@@ -64,6 +64,7 @@ Open:
 - `http://127.0.0.1:3000/crm/sites`
 - `http://127.0.0.1:3000/crm/jobs`
 - `http://127.0.0.1:3000/schedule`
+- `http://127.0.0.1:3000/map`
 
 ## CRM Routes
 
@@ -71,10 +72,17 @@ Open:
 - `/crm/sites` lists, creates, edits, archives, filters by client, and shows linked jobs.
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.
 - `/schedule` lists local reminders grouped by Overdue, Today, Upcoming, and Completed; it supports New, Edit, Mark Complete, Archive, status filtering, and priority filtering.
+- `/map` shows non-archived sites with stored coordinates on a lazy-loaded Leaflet map, supports real status/client filters, manual Refresh Map, marker selection, and an Open Sites link.
 
 The Jobs detail panel also shows a compact reminders section for the selected job. It can add a reminder for that job, mark job reminders complete, and archive them. Editing reminders stays on `/schedule`.
 
 Reminders are local-only in this phase. There is no Outlook sync, Gmail sync, external calendar event creation, email sending, push notification, AI follow-up, or fake provider button. The list view shipped before a calendar grid to keep scheduling fast and safe while future integration details are still deferred.
+
+## Lazy Site Map
+
+The map route calls `GET /v1/sites/map`, which returns only lightweight site location fields. Leaflet and React Leaflet are dynamically imported by `/map`; normal CRM pages, the dashboard, layout, and app shell do not import map code.
+
+This phase uses a no-key OpenStreetMap tile layer for local development and canvas-backed markers for the capped map result set. The page never geocodes on render, never auto-refreshes, and does not expose route optimization, dispatch, calendar sync, report, or photosheet actions. Google Maps, Mapbox, routing, geocoding, and production tile-provider choices are deferred.
 
 ## Drive/File Panel
 

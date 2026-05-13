@@ -16,7 +16,15 @@ from app.schemas.reminder import (
     ReminderRead,
     ReminderUpdate,
 )
-from app.schemas.site import SiteBase, SiteCreate, SiteListResponse, SiteRead, SiteUpdate
+from app.schemas.site import (
+    SiteBase,
+    SiteCreate,
+    SiteListResponse,
+    SiteMapListResponse,
+    SiteMapRead,
+    SiteRead,
+    SiteUpdate,
+)
 
 __all__ = [
     "ClientBase",
@@ -42,6 +50,8 @@ __all__ = [
     "SiteBase",
     "SiteCreate",
     "SiteListResponse",
+    "SiteMapListResponse",
+    "SiteMapRead",
     "SiteRead",
     "SiteUpdate",
 ]

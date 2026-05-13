@@ -1,0 +1,60 @@
+.mapRoot {
+  min-width: 0;
+}
+
+.mapCanvas {
+  height: 620px;
+  min-height: 420px;
+  width: 100%;
+  border-radius: 0.5rem;
+  background: var(--panel-2);
+}
+
+.mapRoot :global(.leaflet-container) {
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: inherit;
+}
+
+.mapRoot :global(.leaflet-popup-content-wrapper),
+.mapRoot :global(.leaflet-popup-tip) {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 38px -24px rgba(0, 0, 0, 0.8);
+}
+
+.mapRoot :global(.leaflet-popup-content) {
+  margin: 0;
+  min-width: 220px;
+}
+
+.mapRoot :global(.leaflet-popup-close-button) {
+  color: var(--text-muted);
+}
+
+.mapRoot :global(.leaflet-popup-close-button:hover) {
+  color: var(--text);
+}
+
+.mapRoot :global(.leaflet-control-attribution),
+.mapRoot :global(.leaflet-control-zoom a) {
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--text-secondary);
+}
+
+.mapRoot :global(.leaflet-control-zoom a:hover) {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.mapRoot :global(.leaflet-control-attribution a) {
+  color: var(--green);
+}
+
+@media (max-width: 767px) {
+  .mapCanvas {
+    height: 460px;
+  }
+}

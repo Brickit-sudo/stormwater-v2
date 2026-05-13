@@ -8,6 +8,7 @@ def test_smoke_script_defaults_match_seed_constants() -> None:
     assert smoke_crm_api.EXPECTED_COUNTS == {
         "clients": 3,
         "sites": 5,
+        "map_sites": 5,
         "jobs": 8,
         "reminders": 4,
         "open_reminders": 3,

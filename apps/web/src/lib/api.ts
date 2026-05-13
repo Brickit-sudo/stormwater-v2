@@ -9,6 +9,8 @@ import type {
   JobFormInput,
   ListOptions,
   ListResponse,
+  MapSite,
+  MapSiteListOptions,
   Reminder,
   ReminderCreate,
   ReminderListOptions,
@@ -222,6 +224,24 @@ export function getClientJobs(
 export function listSites(options: ListOptions): Promise<ListResponse<Site>> {
   return apiRequest<ListResponse<Site>>("/v1/sites", {
     query: orgQuery(options),
+  });
+}
+
+export function listMapSites(
+  options: MapSiteListOptions,
+): Promise<ListResponse<MapSite>> {
+  return apiRequest<ListResponse<MapSite>>("/v1/sites/map", {
+    query: {
+      organization_id: options.organizationId,
+      status: options.status,
+      client_id: options.clientId,
+      north: options.north,
+      south: options.south,
+      east: options.east,
+      west: options.west,
+      limit: options.limit,
+      offset: options.offset,
+    },
   });
 }
 

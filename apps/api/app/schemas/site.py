@@ -57,3 +57,23 @@ class SiteListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class SiteMapRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    client_id: uuid.UUID
+    client_name: str | None = None
+    status: str
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    latitude: Decimal = Field(ge=Decimal("-90"), le=Decimal("90"))
+    longitude: Decimal = Field(ge=Decimal("-180"), le=Decimal("180"))
+
+
+class SiteMapListResponse(BaseModel):
+    items: list[SiteMapRead]
+    total: int
+    limit: int
+    offset: int

@@ -72,6 +72,130 @@ def test_create_list_get_patch_archive_site_and_client_link(
     assert list_after_archive.json()["total"] == 0
 
 
+def test_list_site_map_returns_lightweight_mappable_sites(
+    api_client: TestClient,
+    organization_id: str,
+    create_client_record: Callable[..., dict[str, object]],
+    create_site_record: Callable[..., dict[str, object]],
+) -> None:
+    client = create_client_record(name="Mapped Client")
+    mapped_site = create_site_record(
+        client_id=client["id"],
+        name="Mapped Pond",
+        address="12 Basin Way",
+        city="Portland",
+        state="ME",
+        latitude=43.6601,
+        longitude=-70.2552,
+        status="active",
+        notes="This should not be in the map payload.",
+        drive_folder_url="https://drive.example/folder",
+    )
+    create_site_record(
+        client_id=client["id"],
+        name="No Coordinate Site",
+        latitude=None,
+        longitude=None,
+    )
+    archived_site = create_site_record(
+        client_id=client["id"],
+        name="Archived Coordinate Site",
+        latitude=43.7,
+        longitude=-70.3,
+    )
+    archive_response = api_client.delete(
+        f"/v1/sites/{archived_site['id']}",
+        params={"organization_id": organization_id},
+    )
+    assert archive_response.status_code == 200
+
+    response = api_client.get("/v1/sites/map", params={"organization_id": organization_id})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["limit"] == 1000
+    item = body["items"][0]
+    assert item == {
+        "id": mapped_site["id"],
+        "name": "Mapped Pond",
+        "client_id": client["id"],
+        "client_name": "Mapped Client",
+        "status": "active",
+        "address": "12 Basin Way",
+        "city": "Portland",
+        "state": "ME",
+        "latitude": item["latitude"],
+        "longitude": item["longitude"],
+    }
+    assert float(item["latitude"]) == 43.6601
+    assert float(item["longitude"]) == -70.2552
+    assert "notes" not in item
+    assert "drive_folder_url" not in item
+    assert "created_at" not in item
+
+
+def test_list_site_map_filters_status_client_and_bounds(
+    api_client: TestClient,
+    organization_id: str,
+    create_client_record: Callable[..., dict[str, object]],
+    create_site_record: Callable[..., dict[str, object]],
+) -> None:
+    first_client = create_client_record(name="First Client")
+    second_client = create_client_record(name="Second Client")
+    create_site_record(
+        client_id=first_client["id"],
+        name="Inside Active",
+        latitude=43.66,
+        longitude=-70.25,
+        status="active",
+    )
+    hold_site = create_site_record(
+        client_id=second_client["id"],
+        name="Inside Hold",
+        latitude=43.67,
+        longitude=-70.26,
+        status="on_hold",
+    )
+    create_site_record(
+        client_id=second_client["id"],
+        name="Outside Hold",
+        latitude=44.1,
+        longitude=-69.7,
+        status="on_hold",
+    )
+
+    status_response = api_client.get(
+        "/v1/sites/map",
+        params={"organization_id": organization_id, "status": "on_hold"},
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["total"] == 2
+
+    client_response = api_client.get(
+        "/v1/sites/map",
+        params={"organization_id": organization_id, "client_id": second_client["id"]},
+    )
+    assert client_response.status_code == 200
+    assert client_response.json()["total"] == 2
+
+    bounds_response = api_client.get(
+        "/v1/sites/map",
+        params={
+            "organization_id": organization_id,
+            "status": "on_hold",
+            "north": 43.7,
+            "south": 43.6,
+            "east": -70.2,
+            "west": -70.3,
+        },
+    )
+    assert bounds_response.status_code == 200
+    body = bounds_response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == hold_site["id"]
+
+
 def test_site_rejects_client_from_other_organization(
     api_client: TestClient,
     db_session: Session,

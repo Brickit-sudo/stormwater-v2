@@ -35,6 +35,9 @@ def test_seed_constants_have_expected_structure() -> None:
     assert {"active", "inactive", "on_hold"}.issubset(
         {site["status"] for site in SEED_SITES},
     )
+    assert all(site["latitude"] is not None and site["longitude"] is not None for site in SEED_SITES)
+    assert all(-90 <= site["latitude"] <= 90 for site in SEED_SITES)
+    assert all(-180 <= site["longitude"] <= 180 for site in SEED_SITES)
     assert {"draft", "scheduled", "in_progress", "in_review", "completed"}.issubset(
         {job["status"] for job in SEED_JOBS},
     )

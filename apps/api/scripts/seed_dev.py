@@ -476,6 +476,18 @@ def seed_counts() -> dict[str, int]:
     }
 
 
+def _validate_seed_site_coordinates() -> None:
+    for record in SEED_SITES:
+        latitude = record.get("latitude")
+        longitude = record.get("longitude")
+        if latitude is None or longitude is None:
+            raise RuntimeError(f"Seed site {record['legacy_id']} is missing map coordinates.")
+        if not (Decimal("-90") <= latitude <= Decimal("90")):
+            raise RuntimeError(f"Seed site {record['legacy_id']} has an invalid latitude.")
+        if not (Decimal("-180") <= longitude <= Decimal("180")):
+            raise RuntimeError(f"Seed site {record['legacy_id']} has an invalid longitude.")
+
+
 def _ensure_organization(session: Session) -> Organization:
     organization = session.get(Organization, DEMO_ORGANIZATION_ID)
     if organization is None:
@@ -673,6 +685,7 @@ def _evidence_file_values(
 
 
 def seed(session: Session) -> Organization:
+    _validate_seed_site_coordinates()
     organization = _ensure_organization(session)
 
     client_by_legacy_id: dict[str, Client] = {}

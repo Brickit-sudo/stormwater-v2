@@ -88,6 +88,7 @@ Open:
 - `http://127.0.0.1:3000/crm/sites`
 - `http://127.0.0.1:3000/crm/jobs`
 - `http://127.0.0.1:3000/schedule`
+- `http://127.0.0.1:3000/map`
 
 Optional API smoke after the API is running:
 
@@ -129,6 +130,7 @@ The first usable CRM UI is available at:
 - `http://localhost:3000/crm/sites`
 - `http://localhost:3000/crm/jobs`
 - `http://localhost:3000/schedule`
+- `http://localhost:3000/map`
 
 ### API
 
@@ -195,6 +197,12 @@ The seed script creates one deterministic organization, three clients, five site
 The `/schedule` page manages local-only reminders linked to exactly one Client, Site, or Job. It groups reminders by Overdue, Today, Upcoming, and Completed, supports create/edit, mark complete, archive, and filters by status or priority. The Jobs detail panel also shows job-linked reminders and can add a reminder for the selected job.
 
 This phase deliberately does not add Outlook, Gmail, Calendar sync, external event creation, email sending, push notifications, or AI follow-up buttons. The list view shipped before a calendar grid so the core reminder workflow stays fast and safe while provider sync remains deferred.
+
+### Lazy Site Map
+
+The `/map` route shows seeded sites that already have latitude and longitude. It calls the lightweight `GET /v1/sites/map` endpoint, loads Leaflet only from the map route through a dynamic component, and does not load map code in the CRM pages, dashboard, layout, or app shell.
+
+The map uses a no-key OpenStreetMap tile layer for local development and canvas-backed site markers. It does not geocode on render, auto-refresh, optimize routes, dispatch crews, sync calendars, or create reports. Google Maps, Mapbox, routing, geocoding, and production tile-provider decisions are deferred.
 
 V1 CRM migration Phase M1 is dry-run only. It inspects the V1 SQLite CRM data and writes no V2 database rows:
 

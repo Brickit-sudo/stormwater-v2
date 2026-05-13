@@ -44,6 +44,19 @@ export type Site = {
   archived_at: string | null;
 };
 
+export type MapSite = {
+  id: UUID;
+  name: string;
+  client_id: UUID;
+  client_name: string | null;
+  status: string;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  latitude: string | number;
+  longitude: string | number;
+};
+
 export type Job = {
   id: UUID;
   organization_id: UUID;
@@ -136,6 +149,18 @@ export type ListOptions = {
   status?: string;
   clientId?: UUID;
   siteId?: UUID;
+  limit?: number;
+  offset?: number;
+};
+
+export type MapSiteListOptions = {
+  organizationId: UUID;
+  status?: string;
+  clientId?: UUID;
+  north?: number;
+  south?: number;
+  east?: number;
+  west?: number;
   limit?: number;
   offset?: number;
 };

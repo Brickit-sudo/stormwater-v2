@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Client, Job, Site
 from app.services.common import CRMNotFoundError, CRMValidationError, Page, paginate
+
+
+MAP_DEFAULT_LIMIT = 1000
+MAP_MAX_LIMIT = 5000
+
+
+def _normalize_map_limit(limit: int) -> int:
+    return max(1, min(limit, MAP_MAX_LIMIT))
 
 
 def _require_client(
@@ -85,6 +94,70 @@ def list_sites(
         statement = statement.where(Site.status == status)
 
     return paginate(db, statement.order_by(Site.name, Site.id), limit=limit, offset=offset)
+
+
+def list_map_sites(
+    db: Session,
+    *,
+    organization_id: uuid.UUID,
+    status: str | None = None,
+    client_id: uuid.UUID | None = None,
+    north: Decimal | None = None,
+    south: Decimal | None = None,
+    east: Decimal | None = None,
+    west: Decimal | None = None,
+    limit: int = MAP_DEFAULT_LIMIT,
+    offset: int = 0,
+) -> Page[dict[str, Any]]:
+    normalized_limit = _normalize_map_limit(limit)
+    normalized_offset = max(0, offset)
+    statement = (
+        select(
+            Site.id,
+            Site.name,
+            Site.client_id,
+            Client.name.label("client_name"),
+            Site.status,
+            Site.address,
+            Site.city,
+            Site.state,
+            Site.latitude,
+            Site.longitude,
+        )
+        .join(Client, Site.client_id == Client.id)
+        .where(
+            Site.organization_id == organization_id,
+            Client.organization_id == organization_id,
+            Site.archived_at.is_(None),
+            Client.archived_at.is_(None),
+            Site.latitude.is_not(None),
+            Site.longitude.is_not(None),
+        )
+    )
+    if client_id:
+        statement = statement.where(Site.client_id == client_id)
+    if status:
+        statement = statement.where(Site.status == status)
+    if north is not None:
+        statement = statement.where(Site.latitude <= north)
+    if south is not None:
+        statement = statement.where(Site.latitude >= south)
+    if east is not None:
+        statement = statement.where(Site.longitude <= east)
+    if west is not None:
+        statement = statement.where(Site.longitude >= west)
+
+    count_statement = select(func.count()).select_from(statement.order_by(None).subquery())
+    total = db.scalar(count_statement) or 0
+    rows = db.execute(
+        statement.order_by(Site.name, Site.id).limit(normalized_limit).offset(normalized_offset),
+    )
+    return Page(
+        items=[dict(row) for row in rows.mappings().all()],
+        total=total,
+        limit=normalized_limit,
+        offset=normalized_offset,
+    )
 
 
 def create_site(db: Session, *, data: dict[str, Any]) -> Site:

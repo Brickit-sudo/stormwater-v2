@@ -22,6 +22,7 @@ DEFAULT_ORGANIZATION_ID = str(DEMO_ORGANIZATION_ID)
 EXPECTED_COUNTS = {
     "clients": 3,
     "sites": 5,
+    "map_sites": 5,
     "jobs": 8,
     "reminders": 4,
     "open_reminders": 3,
@@ -71,6 +72,7 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     query = {"organization_id": organization_id, "limit": 100}
     clients = _get_json(base_url, "/v1/clients", query)
     sites = _get_json(base_url, "/v1/sites", query)
+    map_sites = _get_json(base_url, "/v1/sites/map", query)
     jobs = _get_json(base_url, "/v1/jobs", query)
     reminders = _get_json(base_url, "/v1/reminders", query)
     open_reminders = _get_json(
@@ -82,6 +84,7 @@ def run_smoke(base_url: str, organization_id: str) -> None:
 
     _require_count("clients", clients, EXPECTED_COUNTS["clients"])
     _require_count("sites", sites, EXPECTED_COUNTS["sites"])
+    _require_count("mapped sites", map_sites, EXPECTED_COUNTS["map_sites"])
     _require_count("jobs", jobs, EXPECTED_COUNTS["jobs"])
     _require_count("reminders", reminders, EXPECTED_COUNTS["reminders"])
     _require_count("open reminders", open_reminders, EXPECTED_COUNTS["open_reminders"])
@@ -126,6 +129,7 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     print(f"health: {health['status']} ({health['service']})")
     print(f"clients: {clients['total']} - {_sample_names(clients)}")
     print(f"sites: {sites['total']} - {_sample_names(sites)}")
+    print(f"mapped sites: {map_sites['total']} - {_sample_names(map_sites)}")
     print(f"jobs: {jobs['total']} - {_sample_names(jobs)}")
     print(f"reminders: {reminders['total']} ({open_reminders['total']} open)")
     print(f"files: {files['total']}")

@@ -75,7 +75,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The deterministic seed creates one organization, three clients, five sites, eight jobs, four local reminders, and seven `evidence_files` metadata rows. The seven file rows include client-level, site-level, and job-level examples to exercise the Drive/File panel on each CRM detail view. The four reminders include overdue, due-today, upcoming, and completed examples for `/schedule`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
+The deterministic seed creates one organization, three clients, five sites with public approximate map coordinates, eight jobs, four local reminders, and seven `evidence_files` metadata rows. The seven file rows include client-level, site-level, and job-level examples to exercise the Drive/File panel on each CRM detail view. The four reminders include overdue, due-today, upcoming, and completed examples for `/schedule`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
 
 Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 
@@ -157,6 +157,7 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `GET /v1/clients/{client_id}/sites`
 - `GET /v1/clients/{client_id}/jobs`
 - `GET /v1/sites`
+- `GET /v1/sites/map`
 - `POST /v1/sites`
 - `GET /v1/sites/{site_id}`
 - `PATCH /v1/sites/{site_id}`
@@ -195,6 +196,14 @@ GET /v1/files?organization_id=<uuid>&job_id=<job-uuid>
 ```
 
 The `source` field is currently treated as an enum-like string. Allowed values: `drive_link` (default), `upload_placeholder`, `report_export`, `photo`, `other`.
+
+## Lazy Site Map Endpoint
+
+`GET /v1/sites/map` is the route-only map payload for the V2 frontend. It requires `organization_id`, excludes archived sites, and returns only sites that already have `latitude` and `longitude`.
+
+Optional filters are `status`, `client_id`, `north`, `south`, `east`, `west`, `limit`, and `offset`. `limit` defaults to `1000` and is capped at `5000`.
+
+The response is intentionally lightweight: `id`, `name`, `client_id`, `client_name`, `status`, `address`, `city`, `state`, `latitude`, and `longitude`. It does not include notes, Drive fields, evidence files, reports, jobs, or other linked arrays. It also does not geocode on request; Google Maps, Mapbox, routing, and geocoding workflows are deferred.
 
 ## Basic Examples
 

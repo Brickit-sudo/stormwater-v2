@@ -42,7 +42,7 @@ Use green only for primary actions, active navigation, selected rows, and succes
 
 - Sidebar is fixed on desktop and uses the darkest surface.
 - Brand appears at the top with the subtitle `Field Service Admin`.
-- Navigation is limited to Clients, Sites, Jobs, and Schedule.
+- Navigation is limited to Clients, Sites, Jobs, Schedule, and Map.
 - Active navigation uses `--green-soft`, green text, and a small green status dot.
 - Do not add notification, profile, settings, or placeholder nav controls.
 
@@ -111,3 +111,11 @@ Unknown statuses fall back to muted.
 Every visible normal-user action must do real work. Do not render placeholder controls for Export CSV, New Service Job, Emergency Service, API connected, notifications, profile, maps, Drive upload, Drive sync, folder scan, Outlook sync, Gmail sync, calendar sync, reports, photosheets, invoices, or quotes.
 
 Future pages should follow this design system before adding new primitives.
+
+## Site Map
+
+- Keep the map on `/map`; do not render it on the dashboard or normal CRM pages.
+- Load map code through a route-only dynamic import.
+- Use the lightweight `/v1/sites/map` payload instead of full site records.
+- Real visible actions are limited to Refresh Map, status/client filtering, marker selection, and opening the Sites page.
+- Do not add geocoding, routing, dispatch, scheduling, sync, AI analysis, report, or photosheet controls until those workflows are actually implemented.

@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.schemas import JobListResponse, SiteCreate, SiteListResponse, SiteRead, SiteUpdate
+from app.schemas import (
+    JobListResponse,
+    SiteCreate,
+    SiteListResponse,
+    SiteMapListResponse,
+    SiteRead,
+    SiteUpdate,
+)
 from app.services import sites_service
 from app.services.common import CRMNotFoundError, CRMValidationError
 
@@ -19,7 +27,10 @@ OrgQuery = Annotated[
     Query(description="Temporary organization scope until auth is added."),
 ]
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
+MapLimitQuery = Annotated[int, Query(ge=1, le=5000)]
 OffsetQuery = Annotated[int, Query(ge=0)]
+LatitudeBoundQuery = Annotated[Decimal | None, Query(ge=Decimal("-90"), le=Decimal("90"))]
+LongitudeBoundQuery = Annotated[Decimal | None, Query(ge=Decimal("-180"), le=Decimal("180"))]
 
 
 def _raise_http_error(error: Exception) -> None:
@@ -50,6 +61,34 @@ def list_sites(
         offset=offset,
     )
     return SiteListResponse(items=page.items, total=page.total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/map", response_model=SiteMapListResponse)
+def list_site_map(
+    db: SessionDep,
+    organization_id: OrgQuery,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    client_id: uuid.UUID | None = None,
+    north: LatitudeBoundQuery = None,
+    south: LatitudeBoundQuery = None,
+    east: LongitudeBoundQuery = None,
+    west: LongitudeBoundQuery = None,
+    limit: MapLimitQuery = sites_service.MAP_DEFAULT_LIMIT,
+    offset: OffsetQuery = 0,
+) -> SiteMapListResponse:
+    page = sites_service.list_map_sites(
+        db,
+        organization_id=organization_id,
+        status=status_filter,
+        client_id=client_id,
+        north=north,
+        south=south,
+        east=east,
+        west=west,
+        limit=limit,
+        offset=offset,
+    )
+    return SiteMapListResponse(items=page.items, total=page.total, limit=page.limit, offset=page.offset)
 
 
 @router.post("", response_model=SiteRead, status_code=status.HTTP_201_CREATED)

@@ -137,6 +137,7 @@ export default function SitesPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const [pendingQuerySiteId, setPendingQuerySiteId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -169,6 +170,22 @@ export default function SitesPage() {
       setError(caught instanceof Error ? caught.message : "Unable to load clients.");
     }
   }, [organizationId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const queryClientId = params.get("client_id");
+      const querySiteId = params.get("site_id");
+      if (queryClientId) {
+        setClientFilter(queryClientId);
+      }
+      if (querySiteId) {
+        setPendingQuerySiteId(querySiteId);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const loadSites = useCallback(async () => {
     if (!organizationId) {
@@ -252,6 +269,21 @@ export default function SitesPage() {
       window.clearTimeout(timer);
     };
   }, [organizationId, selectedSiteId]);
+
+  useEffect(() => {
+    if (!pendingQuerySiteId) {
+      return;
+    }
+    if (sites.some((site) => site.id === pendingQuerySiteId)) {
+      const timer = window.setTimeout(() => {
+        setSelectedSiteId(pendingQuerySiteId);
+        setPendingQuerySiteId(null);
+        setMode("view");
+      }, 0);
+
+      return () => window.clearTimeout(timer);
+    }
+  }, [pendingQuerySiteId, sites]);
 
   if (!organizationId) {
     return <SetupMessage />;
