@@ -77,6 +77,7 @@ from app.schemas.report_readiness import (
     ReportReadinessCheck,
     ReportReadinessResponse,
 )
+from app.schemas.search import SearchGroup, SearchResponse, SearchResult
 from app.schemas.site import (
     SiteBase,
     SiteCreate,
@@ -156,6 +157,9 @@ __all__ = [
     "ReportReadinessResponse",
     "ReportSectionDraftRequest",
     "ReportSectionDraftResponse",
+    "SearchGroup",
+    "SearchResponse",
+    "SearchResult",
     "SiteBase",
     "SiteCreate",
     "SiteListResponse",

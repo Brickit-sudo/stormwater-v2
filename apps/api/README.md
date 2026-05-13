@@ -190,6 +190,7 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 ## Current Endpoints
 
 - `GET /health`
+- `GET /v1/search`
 - `GET /v1/clients`
 - `POST /v1/clients`
 - `GET /v1/clients/{client_id}`
@@ -257,6 +258,8 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` table. This phase does not implement binary upload, server-side Google Drive OAuth/token storage, folder creation, folder scanning, Drive sync, file download, OCR, AI file analysis, or report generation from files. `DELETE` is a soft archive (`archived_at`) - it never touches the actual file in Google Drive.
 
 The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
+
+The `/v1/search` endpoint is local-only global search. It searches bounded, organization-scoped V2 database rows for Clients, Sites, Jobs, evidence file metadata, local email message records, AI drafts, and reminders. It never calls Outlook, Gmail, Google Drive, OneDrive, SharePoint, OpenAI, scans folders, downloads files, syncs mailboxes, or indexes external providers. `q` is required with at least two characters. `limit` defaults to `10` per type and is capped at `25`; `types` can narrow the grouped response to `clients`, `sites`, `jobs`, `files`, `emails`, `ai_drafts`, and `reminders`. Email and draft text matching uses capped local text prefixes instead of unbounded provider/body scans.
 
 The Work Hub email endpoints are local-first. `/v1/email-messages` stores seeded, manual, or explicitly imported Outlook message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores review-first draft text linked to Client/Site/Job/Email records. `/v1/outlook/drafts/from-ai-draft` creates an Outlook Draft from a reviewed email-style AI draft, stores provider metadata on that local draft, and never sends. `/v1/ai/*` can generate or suggest structured outputs, but it never sends email, generates final reports, downloads attachments, or auto-links records. `/v1/email-import-batches` stores local batch metadata.
 

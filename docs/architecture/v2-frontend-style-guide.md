@@ -42,7 +42,7 @@ Use green only for primary actions, active navigation, selected rows, and succes
 
 - Sidebar is fixed on desktop and uses the darkest surface.
 - Brand appears at the top with the subtitle `Field Service Admin`.
-- Navigation is limited to Clients, Sites, Jobs, Schedule, Map, and Work Hub.
+- Navigation is limited to Search, Clients, Sites, Jobs, Schedule, Map, and Work Hub.
 - Active navigation uses `--green-soft`, green text, and a small green status dot.
 - Do not add notification, profile, settings, or placeholder nav controls.
 
@@ -50,6 +50,7 @@ Use green only for primary actions, active navigation, selected rows, and succes
 
 - Keep the topbar slim and informational.
 - It may show the current section title and short subtitle.
+- A compact search entry may navigate to `/search` on Enter; it must not run provider search or live queries on every keystroke.
 - Do not add fake action buttons, fake profile menus, notification icons, or API-connected indicators.
 
 ## Cards And Panels

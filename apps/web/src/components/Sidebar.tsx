@@ -10,6 +10,7 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  { label: "Search", href: "/search", description: "Find records" },
   { label: "Clients", href: "/crm/clients", description: "Accounts" },
   { label: "Sites", href: "/crm/sites", description: "Locations" },
   { label: "Jobs", href: "/crm/jobs", description: "Work orders" },

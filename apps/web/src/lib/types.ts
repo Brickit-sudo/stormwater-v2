@@ -153,6 +153,49 @@ export type ListOptions = {
   offset?: number;
 };
 
+export type SearchType =
+  | "clients"
+  | "sites"
+  | "jobs"
+  | "files"
+  | "emails"
+  | "ai_drafts"
+  | "reminders";
+
+export type SearchResult = {
+  id: UUID;
+  type: SearchType | string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  status: string | null;
+  href: string | null;
+  matched_fields: string[];
+  occurred_at: string | null;
+  updated_at: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type SearchGroup = {
+  type: SearchType | string;
+  label: string;
+  count: number;
+  results: SearchResult[];
+};
+
+export type SearchResponse = {
+  query: string;
+  groups: SearchGroup[];
+  total_count: number;
+};
+
+export type GlobalSearchOptions = {
+  organizationId: UUID;
+  q: string;
+  types?: SearchType[];
+  limit?: number;
+};
+
 export type TimelineEntryType =
   | "record"
   | "job"

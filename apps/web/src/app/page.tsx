@@ -78,6 +78,12 @@ const initialDashboardData: DashboardData = {
 
 const quickLinks: NavCard[] = [
   {
+    href: "/search",
+    title: "Search",
+    description: "Find local CRM records across accounts, work, files, emails, drafts, and reminders.",
+    label: "Find",
+  },
+  {
     href: "/crm/clients",
     title: "Clients",
     description: "Accounts, contacts, and stored client file links.",

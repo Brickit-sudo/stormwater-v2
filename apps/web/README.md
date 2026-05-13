@@ -66,6 +66,7 @@ npm run dev
 
 Open:
 
+- `http://127.0.0.1:3000/search`
 - `http://127.0.0.1:3000/crm/clients`
 - `http://127.0.0.1:3000/crm/sites`
 - `http://127.0.0.1:3000/crm/jobs`
@@ -75,6 +76,7 @@ Open:
 
 ## CRM Routes
 
+- `/search` searches bounded local V2 CRM records across Clients, Sites, Jobs, evidence file metadata, imported email records, AI drafts, and reminders. It runs only on explicit submit, uses `GET /v1/search`, and does not call Outlook, Gmail, Google Drive, OneDrive, SharePoint, OpenAI, or external provider search.
 - `/crm/clients` lists, creates, edits, archives, and shows linked sites/jobs.
 - `/crm/sites` lists, creates, edits, archives, filters by client, and shows linked jobs.
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.
@@ -130,3 +132,7 @@ There is no Gmail sync, no Sync All Mailbox, no sending, no automatic Outlook dr
 Future Outlook draft work can add push revisions, explicit reviewed send, and sent-state sync.
 
 Every visible Work Hub action does real work: switch views, refresh provider status, search/filter local emails, preview Outlook emails when configured, import selected preview rows, paginate lists, link an email to a Client/Site/Job, summarize/extract/suggest from local messages, create reminders from selected suggestions, save file metadata links, create/edit/archive drafts, mark drafts reviewed/used, archive email records, and open stored file/link URLs.
+
+## Global Search
+
+Global Search is a local-only foundation. The sidebar and dashboard link to `/search`; the topbar search field navigates there on Enter. Results are grouped by record type and capped by the API. Search links only to real supported routes: Clients, Sites, Jobs, Work Hub, and Schedule. Provider search, full-text indexing, record-specific deep links for every surface, and a command palette are deferred.

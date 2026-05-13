@@ -1,8 +1,14 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useState, type FormEvent } from "react";
+
+import { usePathname, useRouter } from "next/navigation";
 
 const titles: Record<string, { title: string; subtitle: string }> = {
+  "/search": {
+    title: "Search",
+    subtitle: "Local CRM records",
+  },
   "/crm/clients": {
     title: "Clients",
     subtitle: "Accounts and their primary contacts",
@@ -37,7 +43,19 @@ function resolveSection(pathname: string) {
 
 export default function Topbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const section = resolveSection(pathname);
+  const [searchValue, setSearchValue] = useState("");
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = searchValue.trim();
+    if (trimmed.length < 2) {
+      router.push("/search");
+      return;
+    }
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+  }
 
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-bg/85 backdrop-blur-md">
@@ -52,7 +70,19 @@ export default function Topbar() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <form className="hidden md:block" onSubmit={submitSearch}>
+            <label className="sr-only" htmlFor="topbar-search">
+              Search local records
+            </label>
+            <input
+              id="topbar-search"
+              value={searchValue}
+              onChange={(event) => setSearchValue(event.target.value)}
+              placeholder="Search local records"
+              className="h-9 w-64 rounded-md border border-border bg-panel-2 px-3 text-sm text-text outline-none transition placeholder:text-text-muted focus:border-[color:var(--green)] focus:ring-2 focus:ring-green/40"
+            />
+          </form>
           <span className="inline-flex items-center rounded-full border border-border-soft bg-panel px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">
             V2 Bootstrap
           </span>

@@ -27,6 +27,7 @@ import type {
   EvidenceFileCreateInput,
   EvidenceFileListOptions,
   EvidenceFileUpdateInput,
+  GlobalSearchOptions,
   IntegrationsStatus,
   Job,
   JobFormInput,
@@ -52,6 +53,7 @@ import type {
   ReminderCreate,
   ReminderListOptions,
   ReminderUpdate,
+  SearchResponse,
   Site,
   SiteFormInput,
   TimelineEntry,
@@ -288,6 +290,28 @@ function timelineQuery({
     job_id: jobId,
     limit,
   };
+}
+
+function searchQuery({
+  organizationId,
+  q,
+  types,
+  limit,
+}: GlobalSearchOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    q,
+    types: types?.join(","),
+    limit,
+  };
+}
+
+export function globalSearch(
+  options: GlobalSearchOptions,
+): Promise<SearchResponse> {
+  return apiRequest<SearchResponse>("/v1/search", {
+    query: searchQuery(options),
+  });
 }
 
 export function listClients(options: ListOptions): Promise<ListResponse<Client>> {
