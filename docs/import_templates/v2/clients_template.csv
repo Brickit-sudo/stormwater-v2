@@ -1,0 +1,3 @@
+source_system,legacy_source,legacy_id,client_external_id,canonical_name,alias_values,status,primary_contact_name,email,phone,billing_address,drive_folder_url,notes
+demo_crm,demo_legacy,client-demo-001,client-demo-001,Example Property Group,"Example PG; EPG",active,Jordan Example,jordan.client@example.com,555-0100,"100 Demo Way, Example City, ME 04000",https://drive.google.com/drive/folders/demo-client-folder,"Fake demo client row only."
+demo_crm,demo_legacy,client-demo-002,client-demo-002,Sample Facilities LLC,"Sample Facilities; SFLLC",prospect,Riley Sample,riley.client@example.com,555-0101,"200 Template Road, Example City, NH 03000",,"Fake demo prospect row only."

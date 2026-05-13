@@ -1,0 +1,3 @@
+source_system,legacy_source,legacy_id,contact_external_id,client_external_id,site_external_id,name,email,phone,role,notes
+demo_crm,demo_legacy,contact-demo-001,contact-demo-001,client-demo-001,site-demo-001,Jordan Example,jordan.contact@example.com,555-0102,Property Manager,"Fake demo contact linked to a fake client and site."
+demo_crm,demo_legacy,contact-demo-002,contact-demo-002,client-demo-002,,Riley Sample,riley.contact@example.com,555-0103,Facilities Lead,"Fake demo contact linked to a fake client only."

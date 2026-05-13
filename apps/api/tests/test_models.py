@@ -5,11 +5,16 @@ from app.models import (
     AiDraft,
     BmpSystem,
     Client,
+    ClientAlias,
     Contact,
     EmailImportBatch,
     EmailMessage,
     EmailRecordLink,
     EvidenceFile,
+    ExternalRecordId,
+    FileCategory,
+    ImportBatch,
+    ImportRow,
     Job,
     Observation,
     Organization,
@@ -17,7 +22,9 @@ from app.models import (
     OutlookConnection,
     Reminder,
     Report,
+    ServiceCatalog,
     Site,
+    SiteAlias,
     User,
 )
 
@@ -26,12 +33,17 @@ EXPECTED_TABLES = {
     "activity_log",
     "bmp_systems",
     "clients",
+    "client_aliases",
     "contacts",
     "ai_drafts",
     "email_import_batches",
     "email_messages",
     "email_record_links",
     "evidence_files",
+    "external_record_ids",
+    "file_categories",
+    "import_batches",
+    "import_rows",
     "jobs",
     "observations",
     "organization_memberships",
@@ -39,7 +51,9 @@ EXPECTED_TABLES = {
     "outlook_connections",
     "reminders",
     "reports",
+    "service_catalog",
     "sites",
+    "site_aliases",
     "users",
 }
 
@@ -88,6 +102,22 @@ EXPECTED_INDEXES = {
     "ix_ai_drafts_organization_id_draft_type",
     "ix_outlook_connections_organization_id_status",
     "ix_outlook_connections_organization_id_email_address",
+    "ix_external_record_ids_organization_id_entity",
+    "ix_client_aliases_organization_id_client_id",
+    "ix_client_aliases_organization_id_source_system",
+    "ix_site_aliases_organization_id_site_id",
+    "ix_site_aliases_organization_id_client_id",
+    "ix_site_aliases_organization_id_source_system",
+    "ix_service_catalog_organization_id_category",
+    "ix_service_catalog_organization_id_is_active",
+    "ix_file_categories_organization_id_is_active",
+    "ix_import_batches_organization_id_created_at",
+    "ix_import_batches_organization_id_import_type",
+    "ix_import_batches_organization_id_status",
+    "ix_import_rows_organization_id_import_batch_id",
+    "ix_import_rows_organization_id_status",
+    "ix_import_rows_organization_id_duplicate_key",
+    "ix_import_rows_organization_id_matched_entity",
 }
 
 
@@ -111,8 +141,10 @@ def test_core_model_classes_import_cleanly() -> None:
     assert User.__tablename__ == "users"
     assert OrganizationMembership.__tablename__ == "organization_memberships"
     assert Client.__tablename__ == "clients"
+    assert ClientAlias.__tablename__ == "client_aliases"
     assert Contact.__tablename__ == "contacts"
     assert Site.__tablename__ == "sites"
+    assert SiteAlias.__tablename__ == "site_aliases"
     assert Job.__tablename__ == "jobs"
     assert BmpSystem.__tablename__ == "bmp_systems"
     assert Observation.__tablename__ == "observations"
@@ -124,3 +156,8 @@ def test_core_model_classes_import_cleanly() -> None:
     assert EmailMessage.__tablename__ == "email_messages"
     assert EmailRecordLink.__tablename__ == "email_record_links"
     assert AiDraft.__tablename__ == "ai_drafts"
+    assert ExternalRecordId.__tablename__ == "external_record_ids"
+    assert ServiceCatalog.__tablename__ == "service_catalog"
+    assert FileCategory.__tablename__ == "file_categories"
+    assert ImportBatch.__tablename__ == "import_batches"
+    assert ImportRow.__tablename__ == "import_rows"

@@ -269,6 +269,23 @@ cd apps\api
 
 `--apply` is intentionally blocked until the M2 apply phase.
 
+### V2 Import Readiness
+
+V2 now has a database/import contract, safe fake CSV templates, and a standalone validator for future Clients, Contacts, Sites, Jobs, Documents, and Emails import work:
+
+- Contract: `docs/architecture/v2-database-import-contract.md`
+- Fake templates: `docs/import_templates/v2/`
+- Validator: `apps/api/scripts/validate_import_templates.py`
+
+Run the validator with private copies of the templates before any real import planning:
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\validate_import_templates.py --clients "..\..\docs\import_templates\v2\clients_template.csv" --sites "..\..\docs\import_templates\v2\sites_template.csv" --jobs "..\..\docs\import_templates\v2\jobs_template.csv" --documents "..\..\docs\import_templates\v2\documents_template.csv"
+```
+
+This is validation only: no database writes, no V1 apply, no provider calls, no Drive or mailbox crawl, and no report generation.
+
 Example:
 
 ```powershell

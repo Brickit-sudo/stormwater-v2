@@ -1,0 +1,3 @@
+source_system,legacy_source,legacy_id,document_external_id,file_name,document_category,parent_type,parent_external_id,client_external_id,site_external_id,job_external_id,drive_file_url,drive_folder_url,mime_type,caption,notes
+demo_crm,demo_legacy,document-demo-001,document-demo-001,Demo Site Plan.pdf,site_plan,site,site-demo-001,,,,https://drive.google.com/file/d/demo-file-id/view,,application/pdf,Fake demo site plan,"Fake demo document row only."
+demo_crm,demo_legacy,document-demo-002,document-demo-002,Demo Inspection Photos Folder,photos,job,job-demo-001,,,,,https://drive.google.com/drive/folders/demo-photo-folder,,Fake demo job photo folder,"Fake demo Drive folder link only."

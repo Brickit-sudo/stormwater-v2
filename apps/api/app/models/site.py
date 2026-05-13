@@ -61,3 +61,4 @@ class Site(
     evidence_files: Mapped[list["EvidenceFile"]] = relationship(back_populates="site")
     reports: Mapped[list["Report"]] = relationship(back_populates="site")
     reminders: Mapped[list["Reminder"]] = relationship(back_populates="site")
+    aliases: Mapped[list["SiteAlias"]] = relationship(back_populates="site")

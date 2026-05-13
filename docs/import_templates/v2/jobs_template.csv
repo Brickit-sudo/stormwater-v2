@@ -1,0 +1,3 @@
+source_system,legacy_source,legacy_id,job_external_id,client_external_id,site_external_id,service_code,service_type,name,status,scheduled_date,due_date,completed_date,scope,drive_folder_url,notes
+demo_crm,demo_legacy,job-demo-001,job-demo-001,client-demo-001,site-demo-001,INSPECTION,Annual inspection,2026 Demo Spring Inspection,scheduled,2026-05-20,2026-05-25,,"Inspect fake demo BMP inventory and collect readiness notes.",https://drive.google.com/drive/folders/demo-job-folder,"Fake demo job row only."
+demo_crm,demo_legacy,job-demo-002,job-demo-002,client-demo-002,site-demo-002,CLEANING,Sediment removal,2026 Demo Cleanout Scope,draft,,2026-06-15,,"Scope fake demo sediment removal work.",,"Fake demo draft job row only."

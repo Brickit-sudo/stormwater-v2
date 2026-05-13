@@ -187,6 +187,23 @@ The alias dry-run validates total/valid/invalid rows, blank required fields, uns
 
 Supported deterministic `source_field` values are `client_id`, `account`, `managed_by`, `site_name_exact`, `site_name_prefix`, `site_name_contains`, and `drive_parent_folder`. `drive_parent_folder` only resolves when the V1 site table has an explicit parent-folder field; the dry-run does not infer client ownership from city/state or from a site folder URL alone. `--apply` remains blocked in M1 even when aliases are supplied.
 
+## V2 Import Readiness Contract
+
+The V2 import foundation is separate from the older V1 migration dry-run. It defines the future CRM import contract, reference tables, safe fake templates, and a CSV validator for Clients, Contacts, Sites, Jobs, Documents, and Emails.
+
+- Contract: `..\..\docs\architecture\v2-database-import-contract.md`
+- Templates: `..\..\docs\import_templates\v2\`
+- Validator: `scripts\validate_import_templates.py`
+
+Example validation against the committed fake templates:
+
+```powershell
+cd apps\api
+.\.venv\Scripts\python scripts\validate_import_templates.py --clients "..\..\docs\import_templates\v2\clients_template.csv" --contacts "..\..\docs\import_templates\v2\contacts_template.csv" --sites "..\..\docs\import_templates\v2\sites_template.csv" --jobs "..\..\docs\import_templates\v2\jobs_template.csv" --documents "..\..\docs\import_templates\v2\documents_template.csv" --emails "..\..\docs\import_templates\v2\emails_template.csv"
+```
+
+The validator reads CSV files only. It does not open a database connection, write CRM rows, call Outlook/Gmail/Drive/OpenAI, run a V1 apply migration, or import real data. Private real-data copies belong under ignored paths such as `docs\import_templates\v2\private\`, `docs\import_templates\v2\filled\`, or `apps\api\import_data\`.
+
 ## Current Endpoints
 
 - `GET /health`

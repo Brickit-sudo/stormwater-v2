@@ -1,0 +1,3 @@
+source_system,legacy_source,legacy_id,site_external_id,client_external_id,canonical_name,alias_values,site_code,status,address,city,state,zip,latitude,longitude,drive_folder_url,notes
+demo_crm,demo_legacy,site-demo-001,site-demo-001,client-demo-001,Example Retail Plaza,"ERP; Store 100",ERP-100,active,10 Demo Plaza,Example City,ME,04000,43.000000,-70.000000,https://drive.google.com/drive/folders/demo-site-folder,"Fake demo site row only."
+demo_crm,demo_legacy,site-demo-002,site-demo-002,client-demo-002,Sample Distribution Yard,"SDY; Yard 200",SDY-200,on_hold,20 Template Lane,Sample City,NH,03000,43.100000,-70.100000,,"Fake demo on-hold site row only."

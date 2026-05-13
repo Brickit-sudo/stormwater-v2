@@ -40,3 +40,14 @@ apps/api/migration*.md
 apps/api/*dry-run*.json
 apps/api/*dry-run*.md
 apps/api/*private*
+
+# V2 import readiness private/generated artifacts
+apps/api/import_data/
+docs/import_templates/v2/private/
+docs/import_templates/v2/filled/
+*_real_import*.csv
+*_real_import*.xlsx
+*_private*.csv
+*_private*.xlsx
+import_validation_reports/
+*.db
