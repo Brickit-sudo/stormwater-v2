@@ -271,6 +271,7 @@ export type ReminderListOptions = {
 
 export type EvidenceFileSource =
   | "drive_link"
+  | "google_drive"
   | "upload_placeholder"
   | "report_export"
   | "photo"

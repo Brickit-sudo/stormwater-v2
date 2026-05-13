@@ -24,6 +24,17 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_MODEL")
     ai_features_enabled: bool | None = Field(default=None, validation_alias="AI_FEATURES_ENABLED")
+    google_client_id: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_ID")
+    google_api_key: str | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
+
+    @property
+    def google_drive_picker_enabled(self) -> bool:
+        return bool(
+            self.google_client_id
+            and self.google_client_id.strip()
+            and self.google_api_key
+            and self.google_api_key.strip()
+        )
 
     model_config = SettingsConfigDict(
         env_file=".env",

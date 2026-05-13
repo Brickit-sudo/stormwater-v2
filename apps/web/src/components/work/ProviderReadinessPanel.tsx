@@ -74,7 +74,7 @@ export default function ProviderReadinessPanel({
         <div>
           <h2 className="text-base font-semibold text-text">Provider Readiness</h2>
           <p className="mt-1 text-sm text-text-muted">
-            Local Work Hub actions stay available while provider sync and picker paths are configured later.
+            Local Work Hub actions stay available while picker credentials, OAuth, and provider sync are configured deliberately.
           </p>
         </div>
         <button

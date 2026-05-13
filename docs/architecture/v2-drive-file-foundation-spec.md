@@ -2,7 +2,8 @@
 
 ## Purpose
 
-This spec supports the **first Drive/File foundation pass** in Stormwater V2.
+This spec supports the Drive/File foundation in Stormwater V2, including the
+manual Google Drive Picker layer added after the first metadata-only pass.
 It defines the product behavior, field-level rules, UX copy, API expectations,
 and forbidden buttons for the Drive/File panel that Codex is about to scaffold
 on top of the existing CRM (`clients`, `sites`, `jobs`) and the existing
@@ -10,11 +11,13 @@ on top of the existing CRM (`clients`, `sites`, `jobs`) and the existing
 
 **This phase is metadata-only.** It does **not** implement:
 
-- Google Drive OAuth
+- Server-side Google Drive OAuth/token storage
 - Google Drive folder creation
 - Drive folder/file sync
 - Binary file uploads (no multipart, no progress bars, no storage writes)
 - Folder scanning / listing actual Drive contents
+- File content download
+- OCR or AI file analysis
 - Report generation (DOCX/PDF)
 - Photosheet generation
 - Photo management beyond a generic file link
@@ -52,6 +55,9 @@ for labels, status vocabulary, and CRM page behavior.
   Client / Site / Job.
 - **Add File Link** — a small form that creates a metadata-only
   `evidence_files` row.
+- **Select from Google Drive** when browser Picker credentials are configured.
+  This opens Google Picker only after a user click and saves selected file
+  metadata only.
 - (Optional, if time allows) **Edit File Link** — edit `file_name`, `caption`,
   `public_url`, `source`.
 - (Optional, if time allows) **Archive File Link** — soft delete via
@@ -65,12 +71,13 @@ for labels, status vocabulary, and CRM page behavior.
 - Syncing a Drive folder (no listing, no diffing).
 - Scanning a folder for new files.
 - Creating a Drive folder from V2.
-- Google OAuth or any Google API client.
+- Backend Google Drive API calls, folder scans, or content downloads.
+- Automatic Google Drive sync.
 - Report or photosheet generation.
 - A dedicated photo manager / gallery.
 - V1 migration of `crm_report_artifacts` or `projects/{uuid}/photos`.
 - Cross-entity bulk operations.
-- File preview / thumbnail rendering.
+- File content preview / thumbnail rendering.
 
 ## Entity-Level File Behavior
 
@@ -195,6 +202,7 @@ as an enum-like vocabulary so the UI can render meaningful badges.
 | Source | Meaning | User choose it now? | Notes |
 |---|---|---|---|
 | `drive_link` | A Google Drive (or generic) URL the user pasted in. | **Yes — default.** | The normal value for this phase. Renders as a "Drive link" badge. |
+| `google_drive` | A file selected manually through Google Drive Picker. | No form dropdown; system-set by Picker. | Stores Picker metadata only: file name, MIME type, Drive file id, and URL when available. |
 | `upload_placeholder` | Reserved for a binary file we have not actually uploaded yet (metadata only). | No — hidden in the dropdown for now. | Useful later when we introduce a "pending upload" UX. Keep available in the enum but do not surface it. |
 | `report_export` | A generated DOCX/PDF report artifact produced by the report builder. | No — system-generated only. | Will be set automatically when report generation lands. |
 | `photo` | A photo attached to a job/observation/system. | No — system-generated only. | Will be set automatically when the photo flow lands. |
@@ -273,6 +281,30 @@ the top of the Drive/File panel.
 - Success copy: `Saved.` (same as CRM spec).
 - Failure copy: `Couldn't save your changes. Try again, or check the
   highlighted fields.`
+
+## Google Drive Picker UX
+
+Google Picker is manual-selection only. It does not crawl Drive folders, scan
+all files, download file contents, upload files, OCR documents, analyze files
+with AI, or generate reports.
+
+Configuration is optional. If the browser-safe Picker env vars are missing,
+the UI shows a disabled **Configure Google Drive Picker** state and the
+existing **Add File Link** form remains usable.
+
+When configured:
+
+- Google scripts are injected only after the user clicks **Select from Google
+  Drive**.
+- The browser requests the narrow `drive.file` style scope
+  (`https://www.googleapis.com/auth/drive.file`).
+- The Picker callback returns file metadata to the frontend.
+- The frontend saves metadata through `POST /v1/files` with
+  `source = "google_drive"`.
+- The selected file must still be linked to exactly one Client, Site, or Job.
+
+No private Google secret is exposed to the frontend. The browser API key should
+be restricted in Google Cloud.
 
 ## Edit File Link UX (optional in this pass)
 

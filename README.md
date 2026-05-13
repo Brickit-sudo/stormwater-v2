@@ -73,6 +73,17 @@ AI_FEATURES_ENABLED=
 
 Leave `OPENAI_API_KEY` blank to keep provider-backed AI drafting disabled. Local deterministic link extraction, action candidates, and record suggestions still work.
 
+Optional Google Drive Picker readiness settings:
+
+```text
+GOOGLE_CLIENT_ID=
+GOOGLE_API_KEY=
+```
+
+These are optional and used for readiness status only. Picker/manual selection
+is metadata-only and does not enable Drive sync, folder crawling, downloads,
+uploads, OCR, AI file analysis, or report generation.
+
 Run migrations and seed deterministic CRM demo data:
 
 ```powershell
@@ -91,6 +102,9 @@ Copy the printed organization id into `apps\web\.env.local`:
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=
+NEXT_PUBLIC_GOOGLE_API_KEY=
+NEXT_PUBLIC_GOOGLE_APP_ID=
 ```
 
 Then run the API and web app in separate terminals:
@@ -143,9 +157,14 @@ Set:
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=
+NEXT_PUBLIC_GOOGLE_API_KEY=
+NEXT_PUBLIC_GOOGLE_APP_ID=
 ```
 
 `NEXT_PUBLIC_DEMO_ORG_ID` is temporary while auth and membership-derived organization scoping are deferred. The frontend will show a setup message instead of calling the API if this value is missing.
+Leave the Google Picker values blank to show the configure state and keep using
+manual Add File Link. If configured, restrict the browser key in Google Cloud.
 Restart `npm run dev` after editing `apps/web/.env.local`.
 
 The first usable CRM UI is available at:
@@ -223,9 +242,11 @@ The `/work` route is the only place Outlook import, provider readiness, and Smar
 
 Outlook import is preview/import-selected only: status reads local env and connection state, Connect Outlook starts Microsoft OAuth, callback stores server-side token data, preview calls Microsoft Graph only after a button click, and import writes only selected preview messages to local `email_messages` with an `email_import_batches` row. A hidden advanced request-token path remains for local development and tests.
 
-Smart Hub AI is review-first. With no `OPENAI_API_KEY`, local deterministic helpers still extract Drive/OneDrive/SharePoint/web links, suggest action items, and suggest exact-match Client/Site/Job links. With `OPENAI_API_KEY`, explicit buttons can save email summaries, reply drafts, report sections, maintenance recommendations, and client-facing summaries as local `ai_drafts`. Reviewed email-style AI drafts can be pushed to Outlook Drafts when Outlook is connected; the backend creates a draft message only, stores provider draft metadata locally, and never sends email. The user must review and send from Outlook. The app does not create Gmail drafts, generate final reports, download attachments, scan Drive/OneDrive folders, or auto-create reminders/links.
+Smart Hub AI is review-first. With no `OPENAI_API_KEY`, local deterministic helpers still extract Drive/OneDrive/SharePoint/web links, suggest action items, and suggest exact-match Client/Site/Job links. With `OPENAI_API_KEY`, explicit buttons can save email summaries, reply drafts, report sections, maintenance recommendations, and client-facing summaries as local `ai_drafts`. Reviewed email-style AI drafts can be pushed to Outlook Drafts when Outlook is connected; the backend creates a draft message only, stores provider draft metadata locally, and never sends email. The user must review and send from Outlook. The app does not create Gmail drafts, generate final reports, download attachments, scan Drive/OneDrive folders, upload files, OCR files, analyze file contents with AI, or auto-create reminders/links.
 
-Future phases can add pushing draft revisions, explicit reviewed send, sent-state sync, Microsoft Graph delta query/change notifications, Gmail push notifications, and Google Drive/OneDrive picker flows.
+Google Drive Picker is manual selection only. It loads only in the CRM Drive/File panel and Work Hub Files after a click, uses a narrow `drive.file` style browser flow, and saves selected file metadata to `evidence_files`; it does not crawl folders or download file contents.
+
+Future phases can add pushing draft revisions, explicit reviewed send, sent-state sync, Microsoft Graph delta query/change notifications, Gmail push notifications, OneDrive picker flows, and bounded Drive sync after Picker/manual selection is stable.
 
 ### Local Scheduling And Reminders
 

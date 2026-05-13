@@ -15,9 +15,15 @@ Set `apps/web/.env.local`:
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=
+NEXT_PUBLIC_GOOGLE_API_KEY=
+NEXT_PUBLIC_GOOGLE_APP_ID=
 ```
 
 `NEXT_PUBLIC_DEMO_ORG_ID` is temporary. Auth and membership-derived organization scoping are deferred, so the CRM uses this value when calling the `/v1` API. If it is missing, the app shows a setup message instead of making API calls.
+The Google Picker values are optional. Leave them blank to show the configure
+state and keep using Add File Link. If configured, restrict the browser API key
+in Google Cloud.
 Restart `npm run dev` after changing `.env.local`.
 
 To create local demo data, set `apps\api\.env`, run migrations, then run this from `apps\api`:
@@ -93,14 +99,25 @@ Each CRM detail view (Client, Site, Job) renders a Drive/File panel scoped to th
 - An **Open Drive Folder** link when the selected record (or, for jobs, the parent site) has a `drive_folder_url` set; otherwise a `No Drive folder linked yet.` empty state.
 - A list of linked file metadata rows (`evidence_files`) filtered to the selected entity.
 - **Add File Link** - a metadata-only form that creates an `evidence_files` row. Required: file name. Optional: file URL, source (Drive link / Other), MIME type, caption.
+- **Select from Google Drive** when Picker credentials are configured. This
+  loads Google scripts only after click, lets the user choose one Drive file,
+  and saves returned metadata with `source = "google_drive"`.
 - **Archive** - soft-deletes the link via `archived_at`. **It does not touch the actual file in Google Drive.**
 - **Refresh** - re-fetches the list.
 
-This phase is metadata-only. There is no binary upload, no Google Drive OAuth, no folder creation, no folder scanning, no sync, no report or photosheet generation. Those are deferred and intentionally not exposed as disabled placeholder buttons.
+This phase is metadata-only. There is no binary upload, no server-side Google
+Drive OAuth/token storage, no folder creation, no folder scanning, no sync, no
+file download, no OCR, no AI file analysis, and no report or photosheet
+generation. Those are deferred and intentionally not exposed as disabled
+placeholder buttons.
 
 ## Work Hub
 
 Work Hub is local-first in this phase. Outlook Import lives only under `/work`; it does not run from CRM pages, does not poll on page load, and does not import automatically. Provider readiness reads API configuration and, on `/work`, the active Outlook connection state. Preview Outlook Emails and Refresh Preview are disabled until Microsoft Graph env vars are present and Outlook is connected, then they make explicit bounded preview requests. Import Selected Emails writes only checked preview rows into local `email_messages`.
+
+The Work Hub Files view can save a Google Picker selection only after the user
+chooses a target Client, Site, or Job. It saves metadata only and then refreshes
+the local file list. It does not show a global Drive dump.
 
 Connect Outlook calls `GET /v1/outlook/auth/start` and opens the Microsoft authorization URL. The API callback stores tokens server-side only; the frontend receives connection status and account identity, never access or refresh token values. A hidden advanced request-token field remains for local development and tests.
 
@@ -108,7 +125,7 @@ Smart Hub AI requires `OPENAI_API_KEY` for provider-backed draft generation, but
 
 Reviewed email-style AI drafts can be pushed to Outlook Drafts when Outlook is connected with Microsoft Graph `Mail.ReadWrite`. The Work Hub requires To, Subject, and body review fields, calls the backend only after Create Outlook Draft, saves the Outlook draft metadata on the local AI draft, and leaves review/send in Outlook. It does not expose a Send button and `Mail.Send` is not requested.
 
-There is no Gmail sync, no Sync All Mailbox, no sending, no automatic Outlook draft creation, no attachment download, no full mailbox import, no OneDrive/SharePoint scan, no final report generation, and no automatic reminders or auto-linking.
+There is no Gmail sync, no Sync All Mailbox, no sending, no automatic Outlook draft creation, no attachment download, no full mailbox import, no Drive/OneDrive/SharePoint scan, no file upload, no file download, no OCR, no AI file analysis, no final report generation, and no automatic reminders or auto-linking.
 
 Future Outlook draft work can add push revisions, explicit reviewed send, and sent-state sync.
 

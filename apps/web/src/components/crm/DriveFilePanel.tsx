@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import Badge from "@/components/ui/Badge";
@@ -13,6 +14,7 @@ import type {
   EvidenceFileCreateInput,
   UUID,
 } from "@/lib/types";
+import type { GoogleDrivePickedFile } from "@/components/files/GoogleDrivePickerButton";
 import {
   linkChipClass,
   primaryButtonClass,
@@ -27,6 +29,11 @@ type DriveFilePanelProps = {
   driveFolderUrl?: string | null;
   selectedRecordLabel?: string;
 };
+
+const GoogleDrivePickerButton = dynamic(
+  () => import("@/components/files/GoogleDrivePickerButton"),
+  { ssr: false },
+);
 
 type AddFormState = {
   file_name: string;
@@ -64,7 +71,9 @@ function emptyCopyForScope(props: DriveFilePanelProps): string {
 
 function SourceBadge({ source }: { source: string | null }) {
   const label =
-    source === "drive_link"
+    source === "google_drive"
+      ? "Google Drive"
+      : source === "drive_link"
       ? "Drive link"
       : source === "other"
         ? "Other"
@@ -113,6 +122,8 @@ export default function DriveFilePanel(props: DriveFilePanelProps) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<AddFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pickerSaving, setPickerSaving] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
 
   const loadFiles = useCallback(async () => {
     if (!organizationId || !scopeId) {
@@ -204,6 +215,35 @@ export default function DriveFilePanel(props: DriveFilePanelProps) {
     }
   }
 
+  async function savePickedDriveFile(file: GoogleDrivePickedFile) {
+    const input: EvidenceFileCreateInput = {
+      file_name: file.name,
+      source: "google_drive",
+      public_url: file.url,
+      drive_file_id: file.drive_file_id,
+      mime_type: file.mime_type,
+      client_id: clientId ?? null,
+      site_id: siteId ?? null,
+      job_id: jobId ?? null,
+    };
+
+    setPickerSaving(true);
+    setPickerError(null);
+    try {
+      await createFileLink(organizationId, input);
+      await loadFiles();
+    } catch (caught) {
+      const message =
+        caught instanceof Error
+          ? caught.message
+          : "Couldn't save the selected Drive file metadata.";
+      setPickerError(message);
+      throw new Error(message);
+    } finally {
+      setPickerSaving(false);
+    }
+  }
+
   async function archiveFile(file: EvidenceFile) {
     const confirmed = window.confirm(
       "Archive this file link? It will be hidden from the default view. This does not delete the actual file in Drive.",
@@ -227,8 +267,8 @@ export default function DriveFilePanel(props: DriveFilePanelProps) {
       <div className="flex flex-col gap-1">
         <h3 className="text-sm font-semibold text-text">Files & Drive</h3>
         <p className="text-xs text-text-muted">
-          Drive integration is not connected yet. You can store a folder URL and
-          file links for now.
+          Store reviewed file metadata for this record. Google Picker selection
+          is manual and does not sync, download, or scan Drive folders.
         </p>
       </div>
 
@@ -274,6 +314,12 @@ export default function DriveFilePanel(props: DriveFilePanelProps) {
           >
             Refresh
           </button>
+          <GoogleDrivePickerButton
+            label={pickerSaving ? "Saving..." : "Select from Google Drive"}
+            onPicked={savePickedDriveFile}
+            disabled={loading || adding || pickerSaving}
+            className="text-right"
+          />
           <button
             type="button"
             className={primaryButtonClass}
@@ -284,6 +330,12 @@ export default function DriveFilePanel(props: DriveFilePanelProps) {
           </button>
         </div>
       </div>
+
+      {pickerError ? (
+        <div className="rounded-md border border-[color:var(--red)]/40 bg-[color:var(--red-soft)] px-3 py-2 text-sm text-[color:var(--red)]">
+          {pickerError}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-md border border-[color:var(--red)]/40 bg-[color:var(--red-soft)] px-3 py-2 text-sm text-[color:var(--red)]">

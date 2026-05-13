@@ -18,7 +18,9 @@ The implementation is local-first:
 - `/work` shows provider readiness cards for Outlook, Gmail, Google Drive, OneDrive, and AI.
 - Outlook status reflects Microsoft Graph env readiness and Work Hub connection state. Outlook OAuth stores server-side token data, and preview/import-selected remains bounded, explicit, and config-gated.
 - Gmail is marked deferred. Future sync should use push notifications, not polling.
-- Google Drive and OneDrive are marked deferred for picker/OAuth paths.
+- Google Drive reports Picker readiness from optional config. Picker selection
+  is manual and metadata-only; full Drive sync/OAuth connection records remain
+  deferred. OneDrive is still deferred for picker/OAuth paths.
 - AI provider calls are config-gated behind `OPENAI_API_KEY`.
 - Deterministic helpers work without API keys:
   - URL extraction from email/body text.
@@ -46,6 +48,7 @@ The implementation is local-first:
 - No automatic Outlook draft creation.
 - No attachment download.
 - No Drive, OneDrive, or SharePoint folder scanning.
+- No file download, upload, OCR, or AI file analysis.
 - No final report generation.
 - No automatic CRM linking.
 - No automatic reminder creation.
@@ -84,6 +87,7 @@ Tests mock provider behavior and never require real OpenAI, Microsoft, or Google
 
 - No email, AI, or provider data loads from CRM pages.
 - Work Hub loads provider status, Outlook connection state, and local email intelligence only under `/work`.
+- Google Picker scripts load only after a user clicks a picker button in a file-specific view.
 - Heavy work happens only after explicit user actions.
 - Deterministic link extraction runs against the selected local email and does not call external providers.
 - Outlook draft creation happens only after an explicit Create Outlook Draft click and never calls `sendMail`.

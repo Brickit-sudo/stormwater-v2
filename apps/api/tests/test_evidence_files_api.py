@@ -71,6 +71,29 @@ def test_create_file_linked_to_job(
     assert result["caption"] == "Pre-inspection scope"
 
 
+def test_create_google_drive_picker_metadata(
+    api_client: TestClient,
+    organization_id: str,
+    create_job_record: Callable[..., dict[str, Any]],
+) -> None:
+    job = create_job_record()
+    result = _create_file(
+        api_client,
+        organization_id,
+        job_id=job["id"],
+        file_name="Picked Site Plan.pdf",
+        source="google_drive",
+        public_url="https://drive.google.com/file/d/drive-picked-123/view",
+        drive_file_id="drive-picked-123",
+        mime_type="application/pdf",
+    )
+    assert result["job_id"] == job["id"]
+    assert result["source"] == "google_drive"
+    assert result["drive_file_id"] == "drive-picked-123"
+    assert result["public_url"].startswith("https://drive.google.com/")
+    assert result["size_bytes"] is None
+
+
 def test_list_files_by_organization_id(
     api_client: TestClient,
     organization_id: str,

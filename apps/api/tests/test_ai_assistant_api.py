@@ -21,6 +21,8 @@ def _settings(**overrides: object) -> SimpleNamespace:
         "microsoft_client_secret": None,
         "microsoft_redirect_uri": None,
         "microsoft_graph_base_url": "https://graph.microsoft.com/v1.0",
+        "google_client_id": None,
+        "google_api_key": None,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -104,10 +106,39 @@ def test_integrations_status_reports_provider_readiness_without_secrets(
     assert body["outlook"]["configured"] is False
     assert "MICROSOFT_CLIENT_SECRET" in body["outlook"]["missing_fields"]
     assert body["gmail"]["status"] == "deferred"
-    assert body["google_drive"]["status"] == "deferred"
+    assert body["google_drive"]["status"] == "missing"
+    assert body["google_drive"]["missing_fields"] == ["GOOGLE_CLIENT_ID", "GOOGLE_API_KEY"]
+    assert "metadata_only_file_links" in body["google_drive"]["enabled_capabilities"]
+    assert "folder_scan" in body["google_drive"]["deferred_capabilities"]
     assert body["onedrive"]["status"] == "deferred"
     assert body["ai"]["missing_fields"] == ["OPENAI_API_KEY"]
     assert "secret" not in str(body).lower().replace("microsoft_client_secret", "")
+
+
+def test_integrations_status_reports_google_drive_picker_config_without_values(
+    api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        integrations_service,
+        "get_settings",
+        lambda: _settings(
+            google_client_id="public-client-id.apps.googleusercontent.com",
+            google_api_key="browser-restricted-api-key",
+        ),
+    )
+
+    response = api_client.get("/v1/integrations/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["google_drive"]["configured"] is True
+    assert body["google_drive"]["status"] == "configured"
+    assert body["google_drive"]["missing_fields"] == []
+    assert "picker_manual_selection" in body["google_drive"]["enabled_capabilities"]
+    serialized = str(body)
+    assert "public-client-id.apps.googleusercontent.com" not in serialized
+    assert "browser-restricted-api-key" not in serialized
 
 
 def test_draft_reply_disabled_without_ai_key_does_not_create_draft(

@@ -13,6 +13,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError, Page, pagi
 
 _ALLOWED_SOURCES = {
     "drive_link",
+    "google_drive",
     "upload_placeholder",
     "report_export",
     "photo",

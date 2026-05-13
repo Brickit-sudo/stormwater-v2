@@ -57,6 +57,53 @@ def get_ai_config_status(settings: Settings | None = None) -> IntegrationProvide
     )
 
 
+def get_google_drive_config_status(settings: Settings | None = None) -> IntegrationProviderStatus:
+    current = settings or get_settings()
+    client_id = getattr(current, "google_client_id", None)
+    api_key = getattr(current, "google_api_key", None)
+    client_configured = _present(client_id)
+    api_key_configured = _present(api_key)
+    configured = client_configured and api_key_configured
+    missing = []
+    if not client_configured:
+        missing.append("GOOGLE_CLIENT_ID")
+    if not api_key_configured:
+        missing.append("GOOGLE_API_KEY")
+
+    if configured:
+        status = "configured"
+        message = (
+            "Google Drive Picker is configured for manual user-selected file metadata. "
+            "Full Drive sync and folder crawling remain deferred."
+        )
+        enabled = ["picker_manual_selection", "metadata_only_file_links"]
+    else:
+        status = "missing"
+        message = (
+            "Configure GOOGLE_CLIENT_ID and GOOGLE_API_KEY to enable manual Drive Picker selection. "
+            "Existing metadata-only file links still work."
+        )
+        enabled = ["metadata_only_file_links"]
+
+    return IntegrationProviderStatus(
+        provider="google_drive",
+        label="Google Drive",
+        configured=configured,
+        status=status,
+        missing_fields=missing,
+        enabled_capabilities=enabled,
+        deferred_capabilities=[
+            "folder_scan",
+            "background_sync",
+            "file_download",
+            "file_upload",
+            "ocr",
+            "ai_file_analysis",
+        ],
+        message=message,
+    )
+
+
 def get_integrations_status(
     settings: Settings | None = None,
     *,
@@ -121,16 +168,7 @@ def get_integrations_status(
             deferred_capabilities=["oauth", "push_notifications", "local_import"],
             message="Gmail integration is deferred. Future sync should use push notifications, not polling.",
         ),
-        google_drive=IntegrationProviderStatus(
-            provider="google_drive",
-            label="Google Drive",
-            configured=False,
-            status="deferred",
-            missing_fields=[],
-            enabled_capabilities=["metadata_only_file_links"],
-            deferred_capabilities=["picker", "oauth", "folder_scan", "attachment_download"],
-            message="Google Drive picker/OAuth are deferred. Current file handling stores reviewed metadata links only.",
-        ),
+        google_drive=get_google_drive_config_status(current),
         onedrive=IntegrationProviderStatus(
             provider="onedrive",
             label="OneDrive",

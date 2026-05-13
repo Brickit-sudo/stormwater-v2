@@ -43,6 +43,19 @@ AI_FEATURES_ENABLED=
 
 These values are optional. If `OPENAI_API_KEY` is missing, provider-backed draft generation is disabled and the `/v1/ai/*` routes return disabled responses where AI is required. Deterministic URL extraction, action candidates, and exact-match record suggestions still work locally. Tests mock provider behavior and do not call real OpenAI, Microsoft, or Google APIs.
 
+Optional Google Drive Picker readiness settings:
+
+```text
+GOOGLE_CLIENT_ID=
+GOOGLE_API_KEY=
+```
+
+These values are optional for normal startup and tests. `/v1/integrations/status`
+reports whether Picker config is present, but it never returns the actual
+client id or API key. Picker/manual selection is metadata-only; the API does
+not crawl Drive folders, download file contents, upload files, OCR files,
+analyze file contents with AI, or generate reports from files.
+
 ## Database
 
 Alembic is configured under `apps/api/alembic` and reads the same `DATABASE_URL`.
@@ -107,6 +120,9 @@ Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=
+NEXT_PUBLIC_GOOGLE_API_KEY=
+NEXT_PUBLIC_GOOGLE_APP_ID=
 ```
 
 This is only a development bridge until auth and organization scoping are added.
@@ -238,7 +254,7 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `PATCH /v1/ai-drafts/{draft_id}`
 - `DELETE /v1/ai-drafts/{draft_id}`
 
-The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` table. This phase does not implement binary upload, Google Drive OAuth, folder creation, folder scanning, or sync. `DELETE` is a soft archive (`archived_at`) - it never touches the actual file in Google Drive.
+The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` table. This phase does not implement binary upload, server-side Google Drive OAuth/token storage, folder creation, folder scanning, Drive sync, file download, OCR, AI file analysis, or report generation from files. `DELETE` is a soft archive (`archived_at`) - it never touches the actual file in Google Drive.
 
 The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
 
@@ -273,7 +289,7 @@ Filter the list with `client_id`, `site_id`, or `job_id` query params:
 GET /v1/files?organization_id=<uuid>&job_id=<job-uuid>
 ```
 
-The `source` field is currently treated as an enum-like string. Allowed values: `drive_link` (default), `upload_placeholder`, `report_export`, `photo`, `other`.
+The `source` field is currently treated as an enum-like string. Allowed values: `drive_link` (default), `google_drive`, `upload_placeholder`, `report_export`, `photo`, `other`.
 
 ## Lazy Site Map Endpoint
 
