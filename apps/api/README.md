@@ -30,6 +30,16 @@ MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 
 These values are optional for normal API startup and tests. If they are missing, only the Outlook import endpoints return a clear configuration error. Do not commit real `.env` secrets.
 
+Optional AI assistant settings:
+
+```text
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+AI_FEATURES_ENABLED=
+```
+
+These values are optional. If `OPENAI_API_KEY` is missing, provider-backed draft generation is disabled and the `/v1/ai/*` routes return disabled responses where AI is required. Deterministic URL extraction, action candidates, and exact-match record suggestions still work locally. Tests mock provider behavior and do not call real OpenAI, Microsoft, or Google APIs.
+
 ## Database
 
 Alembic is configured under `apps/api/alembic` and reads the same `DATABASE_URL`.
@@ -87,7 +97,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The deterministic seed creates one organization, three clients, five sites with public approximate map coordinates, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, three email record links, and three manual AI drafts. The file rows exercise the Drive/File panel; the reminder rows exercise `/schedule`; the email rows exercise `/work`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
+The deterministic seed creates one organization, three clients, five sites with public approximate map coordinates, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, three email record links, and three AI drafts covering an email reply, a report section, and a maintenance recommendation. The seeded emails include Google Drive, OneDrive, SharePoint, action-item, and linked-record examples. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
 
 Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 
@@ -193,6 +203,16 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `GET /v1/email-import-batches`
 - `POST /v1/email-import-batches`
 - `GET /v1/email-import-batches/{batch_id}`
+- `GET /v1/integrations/status`
+- `GET /v1/ai/status`
+- `POST /v1/ai/email-summary`
+- `POST /v1/ai/email-action-items`
+- `POST /v1/ai/extract-file-links`
+- `POST /v1/ai/suggest-record-links`
+- `POST /v1/ai/draft-reply`
+- `POST /v1/ai/report-section-draft`
+- `POST /v1/ai/maintenance-recommendation-draft`
+- `POST /v1/ai/client-summary-draft`
 - `GET /v1/outlook/status`
 - `POST /v1/outlook/preview`
 - `POST /v1/outlook/import-selected`
@@ -214,7 +234,7 @@ The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` 
 
 The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
 
-The Work Hub email endpoints are local-first. `/v1/email-messages` stores seeded, manual, or explicitly imported Outlook message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores manual draft text linked to Client/Site/Job/Email records; it does not generate text, send email, or create Outlook drafts. `/v1/email-import-batches` stores local batch metadata.
+The Work Hub email endpoints are local-first. `/v1/email-messages` stores seeded, manual, or explicitly imported Outlook message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores review-first draft text linked to Client/Site/Job/Email records. `/v1/ai/*` can generate or suggest structured outputs, but it never sends email, creates Outlook drafts, generates final reports, downloads attachments, or auto-links records. `/v1/email-import-batches` stores local batch metadata.
 
 ### Outlook Import Preview MVP
 
@@ -224,7 +244,7 @@ Outlook import is bounded to explicit Work Hub requests:
 - `POST /v1/outlook/preview` requires `organization_id`, a request body, configured Microsoft env vars, and a request-supplied access token for this MVP. It calls Microsoft Graph only for that explicit preview, caps `limit` at 100, and writes nothing locally.
 - `POST /v1/outlook/import-selected` accepts selected preview messages, creates an `email_import_batches` row, creates new `email_messages`, and skips duplicates by `provider_message_id` and `internet_message_id`.
 
-This phase does not implement background mailbox sync, delta query, polling, Gmail, email sending, Outlook draft creation, attachment downloads, OneDrive/SharePoint scanning, or AI generation. Tests mock Graph and do not require a real Outlook account.
+This phase does not implement background mailbox sync, delta query, polling, Gmail, email sending, Outlook draft creation, attachment downloads, or OneDrive/SharePoint scanning. Smart Hub AI can run later against local imported email records, not during Outlook import. Tests mock Graph and do not require a real Outlook account.
 
 Filter the reminder list with `status`, `priority`, `client_id`, `site_id`, `job_id`, `due_before`, and `due_after` query params:
 

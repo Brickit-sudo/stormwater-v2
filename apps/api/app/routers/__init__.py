@@ -1,6 +1,7 @@
 """API routers."""
 
 from app.routers import (
+    ai_assistant,
     ai_drafts,
     clients,
     email_import_batches,
@@ -8,6 +9,7 @@ from app.routers import (
     email_record_links,
     evidence_files,
     health,
+    integrations,
     jobs,
     outlook_import,
     reminders,
@@ -15,6 +17,7 @@ from app.routers import (
 )
 
 __all__ = [
+    "ai_assistant",
     "ai_drafts",
     "clients",
     "email_import_batches",
@@ -22,6 +25,7 @@ __all__ = [
     "email_record_links",
     "evidence_files",
     "health",
+    "integrations",
     "jobs",
     "outlook_import",
     "reminders",

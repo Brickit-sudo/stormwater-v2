@@ -10,6 +10,7 @@ import EmailsWorkView from "./EmailsWorkView";
 import FilesWorkView from "./FilesWorkView";
 import ImportBatchesWorkView from "./ImportBatchesWorkView";
 import OutlookImportWorkView from "./OutlookImportWorkView";
+import ProviderReadinessPanel from "./ProviderReadinessPanel";
 import WorkNav from "./WorkNav";
 
 export type WorkView = "files" | "emails" | "outlook" | "drafts" | "batches";
@@ -25,8 +26,10 @@ export default function WorkHubShell({ organizationId }: WorkHubShellProps) {
     <div className="space-y-6">
       <SectionHeader
         title="Work Hub"
-        description="Local files, email records, manual AI drafts, and import history for stormwater operations."
+        description="Local emails, files, provider readiness, review-first AI drafts, and import history for stormwater operations."
       />
+
+      <ProviderReadinessPanel />
 
       <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
         <div className="xl:sticky xl:top-20 xl:self-start">

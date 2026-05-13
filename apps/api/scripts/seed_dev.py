@@ -523,7 +523,8 @@ SEED_EMAIL_MESSAGES: list[dict[str, Any]] = [
         "snippet": "Can your crew arrive before the stores open for the BMP inspection?",
         "body_text": (
             "Can your crew arrive before the stores open for the BMP inspection? "
-            "The property manager can unlock the rear gate at 6:30 AM."
+            "The property manager can unlock the rear gate at 6:30 AM. "
+            "The current site folder is https://drive.google.com/drive/folders/seed-site-bayside-retail-plaza"
         ),
         "body_html": None,
         "attachments_json": [
@@ -554,7 +555,8 @@ SEED_EMAIL_MESSAGES: list[dict[str, Any]] = [
         "snippet": "CB-4 and CB-7 were blocked by vehicles during the cleanout visit.",
         "body_text": (
             "CB-4 and CB-7 were blocked by vehicles during the cleanout visit. "
-            "Recommend a short return visit after the tenant notice goes out."
+            "Recommend a short return visit after the tenant notice goes out. "
+            "Photos are staged at https://1drv.ms/f/s!seedBlockedStructures"
         ),
         "body_html": None,
         "attachments_json": [
@@ -613,11 +615,17 @@ SEED_EMAIL_MESSAGES: list[dict[str, Any]] = [
         "snippet": "Can you summarize what the baseline onboarding visit includes?",
         "body_text": (
             "Can you summarize what the baseline onboarding visit includes? "
-            "We are comparing a few vendors for the retail portfolio."
+            "We are comparing a few vendors for the retail portfolio. "
+            "Our SharePoint checklist is https://sterlingstormwater.sharepoint.com/sites/ops/Shared%20Documents/portfolio-checklist.pdf"
         ),
         "body_html": None,
         "attachments_json": [],
-        "links_json": [],
+        "links_json": [
+            {
+                "label": "Portfolio checklist",
+                "url": "https://sterlingstormwater.sharepoint.com/sites/ops/Shared%20Documents/portfolio-checklist.pdf",
+            },
+        ],
         "web_link": "https://outlook.office.com/mail/seed-northeast-portfolio",
         "status": "linked",
     },
@@ -698,7 +706,7 @@ SEED_AI_DRAFTS: list[dict[str, Any]] = [
         "target_type": "job",
         "target_legacy_id": "job:bayside-catch-basin-cleaning",
         "email_legacy_id": "email:catch-basin-blocked-structures",
-        "draft_type": "email_reply",
+        "draft_type": "maintenance_recommendation",
         "title": "Blocked catch basin revisit note",
         "prompt_context": "Manual draft for crew/PM follow-up.",
         "draft_text": (
@@ -712,8 +720,8 @@ SEED_AI_DRAFTS: list[dict[str, Any]] = [
         "target_type": "client",
         "target_legacy_id": "client:northeast-retail-portfolio",
         "email_legacy_id": "email:northeast-portfolio-request",
-        "draft_type": "scope_summary",
-        "title": "Portfolio onboarding visit summary",
+        "draft_type": "report_section",
+        "title": "Portfolio onboarding visit report section",
         "prompt_context": "Manual local draft; AI generation is intentionally deferred.",
         "draft_text": (
             "The baseline onboarding visit documents BMP inventory, access constraints, drainage concerns, "

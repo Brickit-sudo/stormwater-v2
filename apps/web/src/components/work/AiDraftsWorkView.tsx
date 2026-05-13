@@ -6,6 +6,10 @@ import Badge from "@/components/ui/Badge";
 import {
   archiveAiDraft,
   createAiDraft,
+  generateClientSummaryDraft,
+  generateMaintenanceRecommendationDraft,
+  generateReportSectionDraft,
+  getAiStatus,
   getAiDraft,
   listAiDrafts,
   listClients,
@@ -18,9 +22,11 @@ import type {
   AiDraft,
   AiDraftCreateInput,
   AiDraftStatus,
+  AiStatus,
   Client,
   EmailMessage,
   Job,
+  ReportSectionDraftResponse,
   Site,
   UUID,
 } from "@/lib/types";
@@ -39,6 +45,7 @@ type AiDraftsWorkViewProps = {
 
 type TargetType = "none" | "client" | "site" | "job";
 type FormMode = "create" | "edit" | null;
+type HelperType = "report_section" | "maintenance_recommendation" | "client_summary";
 
 type DraftFormState = {
   target_type: TargetType;
@@ -48,6 +55,16 @@ type DraftFormState = {
   title: string;
   prompt_context: string;
   draft_text: string;
+};
+
+type HelperFormState = {
+  helper_type: HelperType;
+  target_type: TargetType;
+  target_id: string;
+  email_message_id: string;
+  context: string;
+  section_heading: string;
+  system_type: string;
 };
 
 const draftLimit = 25;
@@ -61,6 +78,16 @@ const emptyForm: DraftFormState = {
   title: "",
   prompt_context: "",
   draft_text: "",
+};
+
+const emptyHelperForm: HelperFormState = {
+  helper_type: "report_section",
+  target_type: "none",
+  target_id: "",
+  email_message_id: "",
+  context: "",
+  section_heading: "Inspection Findings",
+  system_type: "",
 };
 
 function optional(value: string): string | null {
@@ -96,13 +123,17 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
   const [sites, setSites] = useState<Site[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [statusFilter, setStatusFilter] = useState<"" | AiDraftStatus>("");
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [form, setForm] = useState<DraftFormState>(emptyForm);
+  const [helperForm, setHelperForm] = useState<HelperFormState>(emptyHelperForm);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const clientNameById = useMemo(
     () => new Map(clients.map((client) => [client.id, client.name])),
@@ -143,6 +174,29 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
     }
     return [];
   }, [clientNameById, clients, form.target_type, jobs, siteNameById, sites]);
+
+  const helperTargetOptions = useMemo(() => {
+    if (helperForm.target_type === "client") {
+      return clients.map((client) => ({ id: client.id, label: client.name }));
+    }
+    if (helperForm.target_type === "site") {
+      return sites.map((site) => ({
+        id: site.id,
+        label: clientNameById.get(site.client_id)
+          ? `${site.name} - ${clientNameById.get(site.client_id)}`
+          : site.name,
+      }));
+    }
+    if (helperForm.target_type === "job") {
+      return jobs.map((job) => ({
+        id: job.id,
+        label: siteNameById.get(job.site_id)
+          ? `${job.name} - ${siteNameById.get(job.site_id)}`
+          : job.name,
+      }));
+    }
+    return [];
+  }, [clientNameById, clients, helperForm.target_type, jobs, siteNameById, sites]);
 
   const linkedLabel = useCallback(
     (draft: AiDraft): string => {
@@ -215,6 +269,23 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadReferences]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      getAiStatus()
+        .then((status) => {
+          if (!cancelled) setAiStatus(status);
+        })
+        .catch(() => {
+          if (!cancelled) setAiStatus(null);
+        });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -304,6 +375,30 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
     });
   }
 
+  function updateHelperTargetType(type: TargetType) {
+    setHelperForm({
+      ...helperForm,
+      target_type: type,
+      target_id: firstTargetId(type),
+    });
+  }
+
+  function helperTargetPayload() {
+    if (helperForm.target_type === "none") {
+      return {};
+    }
+    if (!helperForm.target_id) {
+      return null;
+    }
+    if (helperForm.target_type === "client") {
+      return { client_id: helperForm.target_id };
+    }
+    if (helperForm.target_type === "site") {
+      return { site_id: helperForm.target_id };
+    }
+    return { job_id: helperForm.target_id };
+  }
+
   function payloadFromForm(): AiDraftCreateInput {
     return {
       client_id: form.target_type === "client" ? form.target_id : null,
@@ -344,6 +439,69 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
       setError(caught instanceof Error ? caught.message : "Unable to save draft.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function generateHelperDraft() {
+    if (!aiStatus?.enabled) {
+      setError("Configure OPENAI_API_KEY before generating AI drafts.");
+      return;
+    }
+    const target = helperTargetPayload();
+    if (target === null) {
+      setError("Choose a linked record or switch CRM Link to No CRM link.");
+      return;
+    }
+    if (!optional(helperForm.context) && !optional(helperForm.email_message_id)) {
+      setError("Add context or choose a related email before generating a draft.");
+      return;
+    }
+
+    setGenerating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const base = {
+        organization_id: organizationId,
+        ...target,
+        email_message_id: optional(helperForm.email_message_id),
+        user_context: optional(helperForm.context),
+        save_draft: true,
+      };
+      let response: ReportSectionDraftResponse;
+      if (helperForm.helper_type === "maintenance_recommendation") {
+        response = await generateMaintenanceRecommendationDraft({
+          ...base,
+          system_type: optional(helperForm.system_type),
+        });
+      } else if (helperForm.helper_type === "client_summary") {
+        response = await generateClientSummaryDraft({
+          ...base,
+          audience: "client",
+        });
+      } else {
+        response = await generateReportSectionDraft({
+          ...base,
+          section_heading: helperForm.section_heading.trim() || "Inspection Findings",
+        });
+      }
+
+      if (!response.available) {
+        setNotice(response.message);
+        return;
+      }
+      if (response.saved_draft) {
+        setSelectedId(response.saved_draft.id);
+        setNotice(`Saved ${response.saved_draft.title} to AI Drafts.`);
+      } else {
+        setNotice(response.message);
+      }
+      await loadDrafts();
+      await loadReferences();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to generate draft.");
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -428,9 +586,25 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
           </div>
         </section>
 
+        <ReportDraftHelper
+          form={helperForm}
+          setForm={setHelperForm}
+          targetOptions={helperTargetOptions}
+          emails={emails}
+          aiEnabled={Boolean(aiStatus?.enabled)}
+          generating={generating}
+          onTargetTypeChange={updateHelperTargetType}
+          onGenerate={() => void generateHelperDraft()}
+        />
+
         {error ? (
           <div className="rounded-md border border-[color:var(--red)]/40 bg-[color:var(--red-soft)] px-4 py-3 text-sm text-[color:var(--red)]">
             {error}
+          </div>
+        ) : null}
+        {notice ? (
+          <div className="rounded-md border border-[color:var(--green)]/35 bg-green-soft px-4 py-3 text-sm text-green">
+            {notice}
           </div>
         ) : null}
 
@@ -699,6 +873,152 @@ function DraftForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function ReportDraftHelper({
+  form,
+  setForm,
+  targetOptions,
+  emails,
+  aiEnabled,
+  generating,
+  onTargetTypeChange,
+  onGenerate,
+}: {
+  form: HelperFormState;
+  setForm: (form: HelperFormState) => void;
+  targetOptions: Array<{ id: string; label: string }>;
+  emails: EmailMessage[];
+  aiEnabled: boolean;
+  generating: boolean;
+  onTargetTypeChange: (type: TargetType) => void;
+  onGenerate: () => void;
+}) {
+  function update(field: keyof HelperFormState, value: string) {
+    if (field === "target_type") {
+      onTargetTypeChange(value as TargetType);
+      return;
+    }
+    if (field === "helper_type") {
+      setForm({ ...form, helper_type: value as HelperType });
+      return;
+    }
+    setForm({ ...form, [field]: value });
+  }
+
+  return (
+    <section className="rounded-lg border border-border bg-panel p-4">
+      <div className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-text">Report Draft Helper</h2>
+          <p className="mt-1 text-sm text-text-muted">
+            Provider-backed drafts are saved locally for review and do not generate final reports.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <FormField label="Helper">
+            <select
+              value={form.helper_type}
+              onChange={(event) => update("helper_type", event.target.value)}
+              className="form-input"
+              disabled={generating}
+            >
+              <option value="report_section">Report section</option>
+              <option value="maintenance_recommendation">Maintenance recommendation</option>
+              <option value="client_summary">Client-facing summary</option>
+            </select>
+          </FormField>
+          <FormField label="Related Email">
+            <select
+              value={form.email_message_id}
+              onChange={(event) => update("email_message_id", event.target.value)}
+              className="form-input"
+              disabled={generating}
+            >
+              <option value="">No email link</option>
+              {emails.map((email) => (
+                <option key={email.id} value={email.id}>
+                  {email.subject}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Section Heading">
+            <input
+              value={form.section_heading}
+              onChange={(event) => update("section_heading", event.target.value)}
+              className="form-input"
+              disabled={generating || form.helper_type !== "report_section"}
+            />
+          </FormField>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-[140px_minmax(0,1fr)_180px]">
+          <FormField label="CRM Link">
+            <select
+              value={form.target_type}
+              onChange={(event) => update("target_type", event.target.value)}
+              className="form-input"
+              disabled={generating}
+            >
+              <option value="none">No CRM link</option>
+              <option value="client">Client</option>
+              <option value="site">Site</option>
+              <option value="job">Job</option>
+            </select>
+          </FormField>
+          <FormField label="Linked Record">
+            <select
+              value={form.target_id}
+              onChange={(event) => update("target_id", event.target.value)}
+              className="form-input"
+              disabled={generating || form.target_type === "none"}
+            >
+              <option value="">Select a record</option>
+              {targetOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="System Type">
+            <input
+              value={form.system_type}
+              onChange={(event) => update("system_type", event.target.value)}
+              className="form-input"
+              disabled={generating || form.helper_type !== "maintenance_recommendation"}
+              placeholder="Catch basin"
+            />
+          </FormField>
+        </div>
+
+        <FormField label="Context">
+          <textarea
+            value={form.context}
+            onChange={(event) => update("context", event.target.value)}
+            className="form-textarea"
+            rows={4}
+            disabled={generating}
+            placeholder="Paste field notes, findings, or client-facing context"
+          />
+        </FormField>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className={primaryButtonClass}
+            onClick={onGenerate}
+            disabled={generating || !aiEnabled}
+            title={aiEnabled ? "Generate and save local draft" : "Configure first"}
+          >
+            {aiEnabled ? (generating ? "Generating..." : "Generate Draft") : "Configure first"}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

@@ -1,10 +1,16 @@
 import type {
+  AiRequestInput,
   AiDraft,
   AiDraftCreateInput,
   AiDraftListOptions,
   AiDraftUpdateInput,
+  AiStatus,
+  ClientSummaryDraftInput,
   Client,
   ClientFormInput,
+  DraftReplyInput,
+  DraftReplyResponse,
+  EmailActionItemsResponse,
   EmailImportBatch,
   EmailImportBatchCreateInput,
   EmailImportBatchListOptions,
@@ -14,14 +20,19 @@ import type {
   EmailMessageUpdateInput,
   EmailRecordLink,
   EmailRecordLinkCreateInput,
+  EmailSummaryResponse,
+  ExtractFileLinksInput,
+  ExtractFileLinksResponse,
   EvidenceFile,
   EvidenceFileCreateInput,
   EvidenceFileListOptions,
   EvidenceFileUpdateInput,
+  IntegrationsStatus,
   Job,
   JobFormInput,
   ListOptions,
   ListResponse,
+  MaintenanceRecommendationDraftInput,
   MapSite,
   MapSiteListOptions,
   OutlookImportSelectedInput,
@@ -29,12 +40,16 @@ import type {
   OutlookPreviewInput,
   OutlookPreviewResponse,
   OutlookStatus,
+  ReportSectionDraftInput,
+  ReportSectionDraftResponse,
   Reminder,
   ReminderCreate,
   ReminderListOptions,
   ReminderUpdate,
   Site,
   SiteFormInput,
+  SuggestRecordLinksInput,
+  SuggestRecordLinksResponse,
   UUID,
 } from "./types";
 
@@ -652,6 +667,86 @@ export function createEmailImportBatch(
   return apiRequest<EmailImportBatch>("/v1/email-import-batches", {
     method: "POST",
     body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function getIntegrationsStatus(): Promise<IntegrationsStatus> {
+  return apiRequest<IntegrationsStatus>("/v1/integrations/status");
+}
+
+export function getAiStatus(): Promise<AiStatus> {
+  return apiRequest<AiStatus>("/v1/ai/status");
+}
+
+export function summarizeEmail(
+  input: AiRequestInput,
+): Promise<EmailSummaryResponse> {
+  return apiRequest<EmailSummaryResponse>("/v1/ai/email-summary", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function extractEmailActionItems(
+  input: AiRequestInput,
+): Promise<EmailActionItemsResponse> {
+  return apiRequest<EmailActionItemsResponse>("/v1/ai/email-action-items", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function extractFileLinks(
+  input: ExtractFileLinksInput,
+): Promise<ExtractFileLinksResponse> {
+  return apiRequest<ExtractFileLinksResponse>("/v1/ai/extract-file-links", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function suggestRecordLinks(
+  input: SuggestRecordLinksInput,
+): Promise<SuggestRecordLinksResponse> {
+  return apiRequest<SuggestRecordLinksResponse>("/v1/ai/suggest-record-links", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function draftEmailReply(
+  input: DraftReplyInput,
+): Promise<DraftReplyResponse> {
+  return apiRequest<DraftReplyResponse>("/v1/ai/draft-reply", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function generateReportSectionDraft(
+  input: ReportSectionDraftInput,
+): Promise<ReportSectionDraftResponse> {
+  return apiRequest<ReportSectionDraftResponse>("/v1/ai/report-section-draft", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function generateMaintenanceRecommendationDraft(
+  input: MaintenanceRecommendationDraftInput,
+): Promise<ReportSectionDraftResponse> {
+  return apiRequest<ReportSectionDraftResponse>("/v1/ai/maintenance-recommendation-draft", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function generateClientSummaryDraft(
+  input: ClientSummaryDraftInput,
+): Promise<ReportSectionDraftResponse> {
+  return apiRequest<ReportSectionDraftResponse>("/v1/ai/client-summary-draft", {
+    method: "POST",
+    body: input,
   });
 }
 

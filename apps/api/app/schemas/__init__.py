@@ -1,5 +1,22 @@
 """Pydantic schemas for API request and response bodies."""
 
+from app.schemas.ai_assistant import (
+    AiStatusResponse,
+    ClientSummaryDraftRequest,
+    DraftReplyRequest,
+    DraftReplyResponse,
+    EmailActionItemsRequest,
+    EmailActionItemsResponse,
+    EmailSummaryRequest,
+    EmailSummaryResponse,
+    ExtractFileLinksRequest,
+    ExtractFileLinksResponse,
+    MaintenanceRecommendationDraftRequest,
+    ReportSectionDraftRequest,
+    ReportSectionDraftResponse,
+    SuggestRecordLinksRequest,
+    SuggestRecordLinksResponse,
+)
 from app.schemas.ai_draft import AiDraftCreate, AiDraftListResponse, AiDraftRead, AiDraftUpdate
 from app.schemas.client import ClientBase, ClientCreate, ClientListResponse, ClientRead, ClientUpdate
 from app.schemas.email_import_batch import (
@@ -29,6 +46,7 @@ from app.schemas.evidence_file import (
     EvidenceFileUpdate,
 )
 from app.schemas.job import JobBase, JobCreate, JobListResponse, JobRead, JobUpdate
+from app.schemas.integration_status import IntegrationProviderStatus, IntegrationsStatusResponse
 from app.schemas.outlook_import import (
     OutlookImportSelectedRequest,
     OutlookImportSelectedResponse,
@@ -55,10 +73,12 @@ from app.schemas.site import (
 )
 
 __all__ = [
+    "AiStatusResponse",
     "AiDraftCreate",
     "AiDraftListResponse",
     "AiDraftRead",
     "AiDraftUpdate",
+    "ClientSummaryDraftRequest",
     "ClientBase",
     "ClientCreate",
     "ClientListResponse",
@@ -68,6 +88,10 @@ __all__ = [
     "EmailImportBatchCreate",
     "EmailImportBatchListResponse",
     "EmailImportBatchRead",
+    "DraftReplyRequest",
+    "DraftReplyResponse",
+    "EmailActionItemsRequest",
+    "EmailActionItemsResponse",
     "EmailMessageBase",
     "EmailMessageCreate",
     "EmailMessageListResponse",
@@ -77,16 +101,23 @@ __all__ = [
     "EmailRecordLinkCreate",
     "EmailRecordLinkListResponse",
     "EmailRecordLinkRead",
+    "EmailSummaryRequest",
+    "EmailSummaryResponse",
     "EvidenceFileBase",
     "EvidenceFileCreate",
     "EvidenceFileListResponse",
     "EvidenceFileRead",
     "EvidenceFileUpdate",
+    "ExtractFileLinksRequest",
+    "ExtractFileLinksResponse",
+    "IntegrationProviderStatus",
+    "IntegrationsStatusResponse",
     "JobBase",
     "JobCreate",
     "JobListResponse",
     "JobRead",
     "JobUpdate",
+    "MaintenanceRecommendationDraftRequest",
     "OutlookImportSelectedRequest",
     "OutlookImportSelectedResponse",
     "OutlookPreviewMessage",
@@ -98,6 +129,8 @@ __all__ = [
     "ReminderListResponse",
     "ReminderRead",
     "ReminderUpdate",
+    "ReportSectionDraftRequest",
+    "ReportSectionDraftResponse",
     "SiteBase",
     "SiteCreate",
     "SiteListResponse",
@@ -105,4 +138,6 @@ __all__ = [
     "SiteMapRead",
     "SiteRead",
     "SiteUpdate",
+    "SuggestRecordLinksRequest",
+    "SuggestRecordLinksResponse",
 ]

@@ -5,18 +5,31 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Badge from "@/components/ui/Badge";
 import {
   archiveEmailMessage,
+  createFileLink,
   createEmailRecordLink,
+  createReminder,
+  draftEmailReply,
+  extractEmailActionItems,
+  extractFileLinks,
+  getAiStatus,
   getEmailMessage,
   listClients,
   listEmailMessages,
   listJobs,
   listSites,
+  suggestRecordLinks,
+  summarizeEmail,
 } from "@/lib/api";
 import type {
+  ActionItemSuggestion,
+  AiStatus,
   Client,
   EmailMessage,
   EmailMessageStatus,
+  EmailSummaryResult,
+  FileLinkCandidate,
   Job,
+  RecordLinkSuggestion,
   Site,
   UUID,
 } from "@/lib/types";
@@ -24,6 +37,7 @@ import {
   dangerButtonClass,
   linkChipClass,
   primaryButtonClass,
+  secondaryButtonClass,
 } from "@/lib/ui";
 
 import WorkList from "./WorkList";
@@ -37,6 +51,12 @@ type TargetType = "client" | "site" | "job";
 
 const emailLimit = 25;
 const statusOptions: Array<"" | EmailMessageStatus> = ["", "unlinked", "linked"];
+const actionPriority = (value: string): "low" | "medium" | "high" => {
+  if (value === "low" || value === "high") {
+    return value;
+  }
+  return "medium";
+};
 
 function formatDate(value: string | null): string {
   if (!value) {
@@ -79,6 +99,11 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
   const [clients, setClients] = useState<Client[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [summary, setSummary] = useState<EmailSummaryResult | null>(null);
+  const [actionItems, setActionItems] = useState<ActionItemSuggestion[]>([]);
+  const [detectedLinks, setDetectedLinks] = useState<FileLinkCandidate[]>([]);
+  const [recordSuggestions, setRecordSuggestions] = useState<RecordLinkSuggestion[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | EmailMessageStatus>("");
   const [providerFilter, setProviderFilter] = useState("");
@@ -86,8 +111,10 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
   const [targetId, setTargetId] = useState("");
   const [loadingList, setLoadingList] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [intelligenceLoading, setIntelligenceLoading] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const clientNameById = useMemo(
     () => new Map(clients.map((client) => [client.id, client.name])),
@@ -132,6 +159,18 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
     [clientNameById, jobNameById, siteNameById],
   );
 
+  const currentTargetPayload = useCallback(() => {
+    if (selectedMessage?.job_id) return { job_id: selectedMessage.job_id };
+    if (selectedMessage?.site_id) return { site_id: selectedMessage.site_id };
+    if (selectedMessage?.client_id) return { client_id: selectedMessage.client_id };
+    if (!targetId) return null;
+    if (targetType === "client") return { client_id: targetId };
+    if (targetType === "site") return { site_id: targetId };
+    return { job_id: targetId };
+  }, [selectedMessage, targetId, targetType]);
+
+  const canUseAiDrafting = Boolean(aiStatus?.enabled);
+
   const firstTargetId = useCallback(
     (type: TargetType): string => {
       if (type === "client") return clients[0]?.id ?? "";
@@ -172,6 +211,10 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
       setTotal(response.total);
       if (response.items.length === 0) {
         setSelectedMessage(null);
+        setSummary(null);
+        setActionItems([]);
+        setDetectedLinks([]);
+        setRecordSuggestions([]);
       }
       setSelectedId((current) =>
         current && response.items.some((message) => message.id === current)
@@ -193,6 +236,23 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
   }, [loadReferences]);
 
   useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      getAiStatus()
+        .then((status) => {
+          if (!cancelled) setAiStatus(status);
+        })
+        .catch(() => {
+          if (!cancelled) setAiStatus(null);
+        });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadMessages();
     }, 250);
@@ -209,6 +269,11 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
       getEmailMessage(selectedId, organizationId)
         .then((message) => {
           if (cancelled) return;
+          setSummary(null);
+          setActionItems([]);
+          setDetectedLinks([]);
+          setRecordSuggestions([]);
+          setNotice(null);
           setSelectedMessage(message);
           if (message.job_id) {
             setTargetType("job");
@@ -221,7 +286,7 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
             setTargetId(message.client_id);
           } else {
             setTargetType("job");
-            setTargetId(firstTargetId("job"));
+            setTargetId("");
           }
         })
         .catch((caught) => {
@@ -238,6 +303,35 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
       window.clearTimeout(timer);
     };
   }, [firstTargetId, organizationId, selectedId]);
+
+  useEffect(() => {
+    if (!selectedMessage) {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setIntelligenceLoading("links");
+      extractFileLinks({
+        organization_id: organizationId,
+        email_message_id: selectedMessage.id,
+      })
+        .then((response) => {
+          if (!cancelled) setDetectedLinks(response.links);
+        })
+        .catch(() => {
+          if (!cancelled) setDetectedLinks([]);
+        })
+        .finally(() => {
+          if (!cancelled) setIntelligenceLoading((current) => (current === "links" ? null : current));
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [organizationId, selectedMessage]);
 
   function updateTargetType(type: TargetType) {
     setTargetType(type);
@@ -286,9 +380,178 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
       await archiveEmailMessage(selectedMessage.id, organizationId);
       setSelectedMessage(null);
       setSelectedId(null);
+      setSummary(null);
+      setActionItems([]);
+      setDetectedLinks([]);
+      setRecordSuggestions([]);
       await loadMessages();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to archive email.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runSummary() {
+    if (!selectedMessage) return;
+    setIntelligenceLoading("summary");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await summarizeEmail({
+        organization_id: organizationId,
+        email_message_id: selectedMessage.id,
+        save_draft: true,
+      });
+      setSummary(response.result);
+      setNotice(response.saved_draft ? `Saved ${response.saved_draft.title} to AI Drafts.` : response.message);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to summarize email.");
+    } finally {
+      setIntelligenceLoading(null);
+    }
+  }
+
+  async function runActionExtraction() {
+    if (!selectedMessage) return;
+    setIntelligenceLoading("actions");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await extractEmailActionItems({
+        organization_id: organizationId,
+        email_message_id: selectedMessage.id,
+        save_draft: true,
+      });
+      setActionItems(response.items);
+      setNotice(response.saved_draft ? `Saved ${response.saved_draft.title} to AI Drafts.` : response.message);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to extract action items.");
+    } finally {
+      setIntelligenceLoading(null);
+    }
+  }
+
+  async function runRecordSuggestions() {
+    if (!selectedMessage) return;
+    setIntelligenceLoading("records");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await suggestRecordLinks({
+        organization_id: organizationId,
+        email_message_id: selectedMessage.id,
+      });
+      setRecordSuggestions(response.suggestions);
+      setNotice(response.message);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to suggest CRM links.");
+    } finally {
+      setIntelligenceLoading(null);
+    }
+  }
+
+  async function runDraftReply() {
+    if (!selectedMessage || !canUseAiDrafting) return;
+    setIntelligenceLoading("reply");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await draftEmailReply({
+        organization_id: organizationId,
+        email_message_id: selectedMessage.id,
+        tone: "professional",
+        save_draft: true,
+      });
+      if (!response.available) {
+        setNotice(response.message);
+        return;
+      }
+      setNotice(response.saved_draft ? `Saved ${response.saved_draft.title} to AI Drafts.` : response.message);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to draft reply.");
+    } finally {
+      setIntelligenceLoading(null);
+    }
+  }
+
+  async function createReminderFromAction(item: ActionItemSuggestion) {
+    if (!selectedMessage) return;
+    const target = currentTargetPayload();
+    if (!target) {
+      setError("Choose a linked record before creating a reminder from this email.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await createReminder(organizationId, {
+        ...target,
+        title: item.title,
+        description: `${item.reason}${item.due_hint ? ` Due hint: ${item.due_hint}.` : ""}`,
+        priority: actionPriority(item.priority),
+        status: "open",
+        source_type: "email_action_item",
+        source_id: selectedMessage.id,
+      });
+      setNotice("Reminder created from the selected action item.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create reminder.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveLinkCandidate(candidate: FileLinkCandidate) {
+    const target = currentTargetPayload();
+    if (!target) {
+      setError("Choose a linked record before saving an email link as a file.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await createFileLink(organizationId, {
+        ...target,
+        file_name: candidate.label,
+        public_url: candidate.url,
+        source: candidate.link_type === "generic_url" ? "other" : "drive_link",
+        caption: selectedMessage
+          ? `Detected from email "${selectedMessage.subject}" as ${candidate.link_type}.`
+          : `Detected from email as ${candidate.link_type}.`,
+      });
+      setNotice("File link saved as evidence metadata. No file was downloaded.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save file link.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyRecordSuggestion(suggestion: RecordLinkSuggestion) {
+    if (!selectedMessage) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await createEmailRecordLink(organizationId, {
+        email_message_id: selectedMessage.id,
+        client_id: suggestion.target_type === "client" ? suggestion.target_id : null,
+        site_id: suggestion.target_type === "site" ? suggestion.target_id : null,
+        job_id: suggestion.target_type === "job" ? suggestion.target_id : null,
+        link_reason: suggestion.reason,
+        confidence: suggestion.confidence,
+      });
+      const refreshed = await getEmailMessage(selectedMessage.id, organizationId);
+      setSelectedMessage(refreshed);
+      await loadMessages();
+      setNotice(`Linked email to ${suggestion.target_name}.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to apply suggested link.");
     } finally {
       setSaving(false);
     }
@@ -352,6 +615,11 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
         {error ? (
           <div className="rounded-md border border-[color:var(--red)]/40 bg-[color:var(--red-soft)] px-4 py-3 text-sm text-[color:var(--red)]">
             {error}
+          </div>
+        ) : null}
+        {notice ? (
+          <div className="rounded-md border border-[color:var(--green)]/35 bg-green-soft px-4 py-3 text-sm text-green">
+            {notice}
           </div>
         ) : null}
 
@@ -464,6 +732,74 @@ export default function EmailsWorkView({ organizationId }: EmailsWorkViewProps) 
               </div>
             </section>
 
+            <section className="rounded-lg border border-border-soft bg-panel-2 p-3">
+              <div className="flex flex-col gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-text">Intelligence Actions</h3>
+                  <p className="mt-1 text-xs text-text-muted">
+                    Review-first local analysis; provider-backed drafting is gated by AI configuration.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    onClick={() => void runSummary()}
+                    disabled={Boolean(intelligenceLoading)}
+                  >
+                    {intelligenceLoading === "summary" ? "Summarizing..." : "Summarize"}
+                  </button>
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    onClick={() => void runActionExtraction()}
+                    disabled={Boolean(intelligenceLoading)}
+                  >
+                    {intelligenceLoading === "actions" ? "Extracting..." : "Extract Actions"}
+                  </button>
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    onClick={() => void runRecordSuggestions()}
+                    disabled={Boolean(intelligenceLoading)}
+                  >
+                    {intelligenceLoading === "records" ? "Checking..." : "Suggest CRM Links"}
+                  </button>
+                  <button
+                    type="button"
+                    className={secondaryButtonClass}
+                    onClick={() => void runDraftReply()}
+                    disabled={Boolean(intelligenceLoading) || !canUseAiDrafting}
+                    title={canUseAiDrafting ? "Save a review-first reply draft" : "Configure first"}
+                  >
+                    {canUseAiDrafting
+                      ? intelligenceLoading === "reply"
+                        ? "Drafting..."
+                        : "Draft Reply"
+                      : "Configure first"}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <SummaryBlock summary={summary} />
+            <DetectedLinksBlock
+              links={detectedLinks}
+              loading={intelligenceLoading === "links"}
+              canSave={Boolean(currentTargetPayload()) && !saving}
+              onSave={(candidate) => void saveLinkCandidate(candidate)}
+            />
+            <ActionItemsBlock
+              items={actionItems}
+              canCreate={Boolean(currentTargetPayload()) && !saving}
+              onCreate={(item) => void createReminderFromAction(item)}
+            />
+            <RecordSuggestionsBlock
+              suggestions={recordSuggestions}
+              saving={saving}
+              onApply={(suggestion) => void applyRecordSuggestion(suggestion)}
+            />
+
             {selectedMessage.snippet ? (
               <p className="rounded-md border border-border-soft bg-panel-2 p-3 text-sm leading-6 text-text-secondary">
                 {selectedMessage.snippet}
@@ -550,6 +886,201 @@ function JsonList({
       ) : (
         <p className="mt-2 rounded-md border border-border-soft bg-panel-2 px-3 py-2 text-sm text-text-muted">
           {empty}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function SummaryBlock({ summary }: { summary: EmailSummaryResult | null }) {
+  if (!summary) {
+    return (
+      <section>
+        <h3 className="text-sm font-semibold text-text">Summary</h3>
+        <p className="mt-2 rounded-md border border-border-soft bg-panel-2 px-3 py-2 text-sm text-text-muted">
+          Run Summarize to create a review-first local draft summary.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-text">Summary</h3>
+      <div className="mt-2 space-y-3 rounded-lg border border-border-soft bg-panel-2 p-3 text-sm">
+        <p className="leading-6 text-text-secondary">{summary.summary}</p>
+        {summary.key_points.length > 0 ? (
+          <ul className="space-y-1 text-text-muted">
+            {summary.key_points.map((point, index) => (
+              <li key={index}>- {point}</li>
+            ))}
+          </ul>
+        ) : null}
+        <p className="text-text-secondary">
+          <span className="font-semibold text-text">Next step:</span>{" "}
+          {summary.recommended_next_step}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function DetectedLinksBlock({
+  links,
+  loading,
+  canSave,
+  onSave,
+}: {
+  links: FileLinkCandidate[];
+  loading: boolean;
+  canSave: boolean;
+  onSave: (candidate: FileLinkCandidate) => void;
+}) {
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-text">Detected Links</h3>
+      {loading ? (
+        <div className="mt-2 h-16 animate-pulse rounded-md border border-border-soft bg-panel-2" />
+      ) : links.length > 0 ? (
+        <ul className="mt-2 divide-y divide-border-soft rounded-lg border border-border-soft bg-panel-2">
+          {links.map((link) => (
+            <li key={link.url} className="space-y-2 px-3 py-2 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block font-semibold text-text">{link.label}</span>
+                  <span className="mt-1 block break-all text-xs text-text-muted">
+                    {link.url}
+                  </span>
+                </span>
+                <Badge tone={link.link_type === "generic_url" ? "muted" : "info"}>
+                  {link.link_type.replace("_", " ")}
+                </Badge>
+              </div>
+              <div className="flex justify-end gap-2">
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className={linkChipClass}
+                >
+                  Open Link
+                </a>
+                <button
+                  type="button"
+                  className={secondaryButtonClass}
+                  onClick={() => onSave(link)}
+                  disabled={!canSave}
+                  title={canSave ? "Save metadata only" : "Choose a linked record first"}
+                >
+                  Save as File Link
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 rounded-md border border-border-soft bg-panel-2 px-3 py-2 text-sm text-text-muted">
+          No Drive, OneDrive, SharePoint, or web links detected in the local email body.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ActionItemsBlock({
+  items,
+  canCreate,
+  onCreate,
+}: {
+  items: ActionItemSuggestion[];
+  canCreate: boolean;
+  onCreate: (item: ActionItemSuggestion) => void;
+}) {
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-text">Action Item Suggestions</h3>
+      {items.length > 0 ? (
+        <ul className="mt-2 divide-y divide-border-soft rounded-lg border border-border-soft bg-panel-2">
+          {items.map((item, index) => (
+            <li key={`${item.title}-${index}`} className="space-y-2 px-3 py-2 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="block font-semibold text-text">{item.title}</span>
+                  <span className="mt-1 block text-xs text-text-muted">
+                    {item.reason}
+                    {item.due_hint ? ` Due hint: ${item.due_hint}.` : ""}
+                  </span>
+                </span>
+                <Badge tone={item.priority === "high" ? "warning" : "muted"}>
+                  {item.priority}
+                </Badge>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  className={secondaryButtonClass}
+                  onClick={() => onCreate(item)}
+                  disabled={!canCreate}
+                  title={canCreate ? "Create local reminder" : "Choose a linked record first"}
+                >
+                  Create Reminder
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 rounded-md border border-border-soft bg-panel-2 px-3 py-2 text-sm text-text-muted">
+          Run Extract Actions to review possible reminder candidates.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function RecordSuggestionsBlock({
+  suggestions,
+  saving,
+  onApply,
+}: {
+  suggestions: RecordLinkSuggestion[];
+  saving: boolean;
+  onApply: (suggestion: RecordLinkSuggestion) => void;
+}) {
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-text">Suggested CRM Links</h3>
+      {suggestions.length > 0 ? (
+        <ul className="mt-2 divide-y divide-border-soft rounded-lg border border-border-soft bg-panel-2">
+          {suggestions.map((suggestion) => (
+            <li key={`${suggestion.target_type}-${suggestion.target_id}`} className="space-y-2 px-3 py-2 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <span>
+                  <span className="block font-semibold text-text">
+                    {suggestion.target_name}
+                  </span>
+                  <span className="mt-1 block text-xs text-text-muted">
+                    {suggestion.reason}
+                  </span>
+                </span>
+                <Badge tone="info">{suggestion.target_type}</Badge>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  className={secondaryButtonClass}
+                  onClick={() => onApply(suggestion)}
+                  disabled={saving}
+                >
+                  Use Suggestion
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 rounded-md border border-border-soft bg-panel-2 px-3 py-2 text-sm text-text-muted">
+          Run Suggest CRM Links to check exact local client, site, and job matches.
         </p>
       )}
     </section>

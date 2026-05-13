@@ -56,6 +56,25 @@ def _get_json(base_url: str, path: str, query: dict[str, str | int] | None = Non
         raise SmokeFailure(f"{url} failed: {error.reason}") from error
 
 
+def _post_json(base_url: str, path: str, payload: dict[str, Any]) -> Any:
+    url = _build_url(base_url, path)
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        raise SmokeFailure(f"{url} returned HTTP {error.code}: {body}") from error
+    except urllib.error.URLError as error:
+        raise SmokeFailure(f"{url} failed: {error.reason}") from error
+
+
 def _require_count(name: str, response: dict[str, Any], expected: int) -> None:
     actual = response.get("total")
     if actual != expected:
@@ -87,6 +106,8 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     email_messages = _get_json(base_url, "/v1/email-messages", query)
     ai_drafts = _get_json(base_url, "/v1/ai-drafts", query)
     email_import_batches = _get_json(base_url, "/v1/email-import-batches", query)
+    integrations_status = _get_json(base_url, "/v1/integrations/status")
+    ai_status = _get_json(base_url, "/v1/ai/status")
 
     _require_count("clients", clients, EXPECTED_COUNTS["clients"])
     _require_count("sites", sites, EXPECTED_COUNTS["sites"])
@@ -98,6 +119,21 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     _require_count("email messages", email_messages, EXPECTED_COUNTS["email_messages"])
     _require_count("AI drafts", ai_drafts, EXPECTED_COUNTS["ai_drafts"])
     _require_count("email import batches", email_import_batches, EXPECTED_COUNTS["email_import_batches"])
+    if "outlook" not in integrations_status or "ai" not in integrations_status:
+        raise SmokeFailure("Integration status response did not include outlook and ai.")
+    if "enabled" not in ai_status:
+        raise SmokeFailure("AI status response did not include enabled.")
+
+    link_extraction = _post_json(
+        base_url,
+        "/v1/ai/extract-file-links",
+        {
+            "organization_id": organization_id,
+            "text": "https://drive.google.com/file/d/smoke/view and https://example.com/smoke",
+        },
+    )
+    if len(link_extraction.get("links", [])) != 2:
+        raise SmokeFailure(f"Expected 2 deterministic extracted links, got {link_extraction!r}.")
 
     first_client = clients["items"][0]
     first_site = sites["items"][0]
@@ -145,6 +181,12 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     print(f"email messages: {email_messages['total']}")
     print(f"AI drafts: {ai_drafts['total']}")
     print(f"email import batches: {email_import_batches['total']}")
+    print(
+        "integrations: "
+        f"outlook={integrations_status['outlook']['status']}, "
+        f"ai={'enabled' if ai_status['enabled'] else 'disabled'}",
+    )
+    print(f"deterministic link extraction: {len(link_extraction['links'])} links")
     print(f"linked client sites: {client_sites['total']} for {first_client['name']}")
     print(f"linked client jobs: {client_jobs['total']} for {first_client['name']}")
     print(f"linked site jobs: {site_jobs['total']} for {first_site['name']}")

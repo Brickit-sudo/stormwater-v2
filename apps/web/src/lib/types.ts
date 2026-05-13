@@ -411,6 +411,26 @@ export type OutlookStatus = {
   message: string;
 };
 
+export type IntegrationProviderStatus = {
+  provider: string;
+  label: string;
+  configured: boolean;
+  status: "configured" | "missing" | "deferred" | string;
+  missing_fields: string[];
+  enabled_capabilities: string[];
+  deferred_capabilities: string[];
+  message: string;
+  model: string | null;
+};
+
+export type IntegrationsStatus = {
+  outlook: IntegrationProviderStatus;
+  gmail: IntegrationProviderStatus;
+  google_drive: IntegrationProviderStatus;
+  onedrive: IntegrationProviderStatus;
+  ai: IntegrationProviderStatus;
+};
+
 export type OutlookPreviewMessage = {
   provider_message_id: string;
   provider_conversation_id: string | null;
@@ -506,4 +526,130 @@ export type AiDraftListOptions = {
   emailMessageId?: UUID;
   limit?: number;
   offset?: number;
+};
+
+export type AiStatus = {
+  configured: boolean;
+  enabled: boolean;
+  provider: string;
+  model: string | null;
+  missing_fields: string[];
+  message: string;
+};
+
+export type SavedDraftRef = {
+  id: UUID;
+  draft_type: string;
+  title: string;
+  status: string;
+};
+
+export type AiRequestInput = {
+  organization_id: UUID;
+  email_message_id?: UUID | null;
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+  user_context?: string | null;
+  save_draft?: boolean;
+};
+
+export type EmailSummaryResult = {
+  summary: string;
+  key_points: string[];
+  questions: string[];
+  recommended_next_step: string;
+};
+
+export type AiOperationResponse = {
+  available: boolean;
+  source: string;
+  model: string | null;
+  error_code: string | null;
+  message: string;
+  saved_draft: SavedDraftRef | null;
+};
+
+export type EmailSummaryResponse = AiOperationResponse & {
+  result: EmailSummaryResult | null;
+};
+
+export type ActionItemSuggestion = {
+  title: string;
+  priority: ReminderPriority | string;
+  due_hint: string | null;
+  reason: string;
+  suggested_owner: string | null;
+};
+
+export type EmailActionItemsResponse = AiOperationResponse & {
+  items: ActionItemSuggestion[];
+};
+
+export type FileLinkCandidate = {
+  url: string;
+  link_type: "google_drive" | "onedrive" | "sharepoint" | "generic_url" | string;
+  label: string;
+  confidence: number;
+};
+
+export type ExtractFileLinksInput = AiRequestInput & {
+  text?: string | null;
+};
+
+export type ExtractFileLinksResponse = AiOperationResponse & {
+  links: FileLinkCandidate[];
+};
+
+export type RecordLinkSuggestion = {
+  target_type: "client" | "site" | "job" | string;
+  target_id: UUID;
+  target_name: string;
+  confidence: number;
+  reason: string;
+};
+
+export type SuggestRecordLinksInput = AiRequestInput & {
+  text?: string | null;
+};
+
+export type SuggestRecordLinksResponse = AiOperationResponse & {
+  suggestions: RecordLinkSuggestion[];
+};
+
+export type DraftReplyInput = AiRequestInput & {
+  tone?: string;
+};
+
+export type DraftReplyResult = {
+  subject: string;
+  body: string;
+  tone: string;
+  review_note: string;
+};
+
+export type DraftReplyResponse = AiOperationResponse & {
+  result: DraftReplyResult | null;
+};
+
+export type ReportSectionDraftInput = AiRequestInput & {
+  section_heading?: string;
+};
+
+export type MaintenanceRecommendationDraftInput = AiRequestInput & {
+  system_type?: string | null;
+};
+
+export type ClientSummaryDraftInput = AiRequestInput & {
+  audience?: string;
+};
+
+export type ReportSectionDraftResult = {
+  heading: string;
+  draft_text: string;
+  cautions: string[];
+};
+
+export type ReportSectionDraftResponse = AiOperationResponse & {
+  result: ReportSectionDraftResult | null;
 };

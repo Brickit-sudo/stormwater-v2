@@ -16,6 +16,8 @@ The Outlook import phase is a bounded Work Hub MVP. It lets an operator check Mi
 - Import-selected creates an `email_import_batches` row and local `email_messages` rows only for selected preview messages.
 - Deduplication skips existing messages by Outlook `provider_message_id` and `internet_message_id`.
 - Attachment payloads are metadata-only; attachments are not downloaded.
+- Provider readiness is also surfaced through `GET /v1/integrations/status`.
+- Imported/local messages can be used by the Smart Hub AI assistant after they become local `email_messages`.
 
 ## Configuration
 
@@ -41,7 +43,7 @@ These are not required for normal API startup, CRM routes, or tests. Missing val
 - No Outlook draft creation.
 - No attachment download.
 - No OneDrive or SharePoint scan.
-- No AI generation.
+- No Outlook-side AI generation or automatic intelligence run during import.
 - No report or photosheet generation.
 
 ## Test Strategy

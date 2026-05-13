@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_cors_origins, get_settings
 from app.routers import (
+    ai_assistant,
     ai_drafts,
     clients,
     email_import_batches,
@@ -10,6 +11,7 @@ from app.routers import (
     email_record_links,
     evidence_files,
     health,
+    integrations,
     jobs,
     outlook_import,
     reminders,
@@ -38,6 +40,8 @@ def create_app() -> FastAPI:
     app.include_router(clients.router)
     app.include_router(sites.router)
     app.include_router(jobs.router)
+    app.include_router(integrations.router)
+    app.include_router(ai_assistant.router)
     app.include_router(outlook_import.router)
     app.include_router(reminders.router)
     app.include_router(evidence_files.router)

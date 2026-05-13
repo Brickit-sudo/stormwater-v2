@@ -20,6 +20,9 @@ class Settings(BaseSettings):
         default="https://graph.microsoft.com/v1.0",
         validation_alias="MICROSOFT_GRAPH_BASE_URL",
     )
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_MODEL")
+    ai_features_enabled: bool | None = Field(default=None, validation_alias="AI_FEATURES_ENABLED")
 
     model_config = SettingsConfigDict(
         env_file=".env",

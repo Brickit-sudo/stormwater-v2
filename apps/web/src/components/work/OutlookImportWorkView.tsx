@@ -95,6 +95,7 @@ export default function OutlookImportWorkView({
       ),
     [previewItems, selectedIds],
   );
+  const outlookConfigured = Boolean(status?.configured);
 
   const loadStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -251,7 +252,7 @@ export default function OutlookImportWorkView({
                 type="button"
                 className={secondaryButtonClass}
                 onClick={() => void runPreview()}
-                disabled={previewing || importing}
+                disabled={previewing || importing || !outlookConfigured}
               >
                 Refresh Preview
               </button>
@@ -260,9 +261,14 @@ export default function OutlookImportWorkView({
               type="button"
               className={primaryButtonClass}
               onClick={() => void runPreview()}
-              disabled={previewing || importing}
+              disabled={previewing || importing || !outlookConfigured}
+              title={outlookConfigured ? "Preview bounded Outlook emails" : "Configure first"}
             >
-              {previewing ? "Previewing..." : "Preview Outlook Emails"}
+              {outlookConfigured
+                ? previewing
+                  ? "Previewing..."
+                  : "Preview Outlook Emails"
+                : "Configure first"}
             </button>
           </div>
         </section>

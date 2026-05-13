@@ -62,6 +62,16 @@ MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 
 Leave these blank to run the CRM without Outlook import. Real Microsoft secrets belong only in local `.env`, never in git.
 
+Optional AI assistant settings for `/work`:
+
+```text
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+AI_FEATURES_ENABLED=
+```
+
+Leave `OPENAI_API_KEY` blank to keep provider-backed AI drafting disabled. Local deterministic link extraction, action candidates, and record suggestions still work.
+
 Run migrations and seed deterministic CRM demo data:
 
 ```powershell
@@ -204,13 +214,17 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, seven file metadata rows, one local email import batch, five local email messages, and three manual AI drafts, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
+The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, seven file metadata rows, one local email import batch, five local email messages, and three AI drafts, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
 
 ### Work Hub And Email Intelligence
 
-The `/work` route is the only place Outlook import appears. It shows existing file links, seeded/local email records, manual AI drafts, local import batch metadata, and an Outlook Import view. Outlook import is preview/import-selected only: status reads local env configuration, preview calls Microsoft Graph only after a button click and requires a request-supplied MVP access token, and import writes only selected preview messages to local `email_messages` with an `email_import_batches` row.
+The `/work` route is the only place Outlook import, provider readiness, and Smart Hub AI actions appear. It shows existing file links, seeded/local email records, AI drafts, local import batch metadata, and an Outlook Import view.
 
-There is no background mailbox sync, page-load polling, Gmail, email sending, Outlook draft creation, attachment download, OneDrive/SharePoint scan, or AI generation in this phase. Future phases can add OAuth UI/token storage, delta query, change notifications, and pushing approved local AI drafts to Outlook drafts.
+Outlook import is preview/import-selected only: status reads local env configuration, preview calls Microsoft Graph only after a button click and requires a request-supplied MVP access token, and import writes only selected preview messages to local `email_messages` with an `email_import_batches` row.
+
+Smart Hub AI is review-first. With no `OPENAI_API_KEY`, local deterministic helpers still extract Drive/OneDrive/SharePoint/web links, suggest action items, and suggest exact-match Client/Site/Job links. With `OPENAI_API_KEY`, explicit buttons can save email summaries, reply drafts, report sections, maintenance recommendations, and client-facing summaries as local `ai_drafts`. The app does not send email, create Outlook/Gmail drafts, generate final reports, download attachments, scan Drive/OneDrive folders, or auto-create reminders/links.
+
+Future phases can add OAuth UI/token storage, Microsoft Graph delta query/change notifications, Gmail push notifications, Google Drive/OneDrive picker flows, and pushing approved local drafts to Outlook drafts.
 
 ### Local Scheduling And Reminders
 

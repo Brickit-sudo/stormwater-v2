@@ -19,6 +19,8 @@ def test_crm_endpoints_are_registered() -> None:
     assert "/v1/sites" in paths
     assert "/v1/sites/{site_id}/jobs" in paths
     assert "/v1/jobs" in paths
+    assert "/v1/integrations/status" in paths
+    assert "/v1/ai/status" in paths
 
 
 def test_health_handler_response() -> None:
