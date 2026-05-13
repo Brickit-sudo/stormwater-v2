@@ -27,6 +27,9 @@ EXPECTED_COUNTS = {
     "reminders": 4,
     "open_reminders": 3,
     "files": 7,
+    "email_messages": 5,
+    "ai_drafts": 3,
+    "email_import_batches": 1,
 }
 
 
@@ -81,6 +84,9 @@ def run_smoke(base_url: str, organization_id: str) -> None:
         {**query, "status": "open"},
     )
     files = _get_json(base_url, "/v1/files", query)
+    email_messages = _get_json(base_url, "/v1/email-messages", query)
+    ai_drafts = _get_json(base_url, "/v1/ai-drafts", query)
+    email_import_batches = _get_json(base_url, "/v1/email-import-batches", query)
 
     _require_count("clients", clients, EXPECTED_COUNTS["clients"])
     _require_count("sites", sites, EXPECTED_COUNTS["sites"])
@@ -89,6 +95,9 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     _require_count("reminders", reminders, EXPECTED_COUNTS["reminders"])
     _require_count("open reminders", open_reminders, EXPECTED_COUNTS["open_reminders"])
     _require_count("files", files, EXPECTED_COUNTS["files"])
+    _require_count("email messages", email_messages, EXPECTED_COUNTS["email_messages"])
+    _require_count("AI drafts", ai_drafts, EXPECTED_COUNTS["ai_drafts"])
+    _require_count("email import batches", email_import_batches, EXPECTED_COUNTS["email_import_batches"])
 
     first_client = clients["items"][0]
     first_site = sites["items"][0]
@@ -133,6 +142,9 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     print(f"jobs: {jobs['total']} - {_sample_names(jobs)}")
     print(f"reminders: {reminders['total']} ({open_reminders['total']} open)")
     print(f"files: {files['total']}")
+    print(f"email messages: {email_messages['total']}")
+    print(f"AI drafts: {ai_drafts['total']}")
+    print(f"email import batches: {email_import_batches['total']}")
     print(f"linked client sites: {client_sites['total']} for {first_client['name']}")
     print(f"linked client jobs: {client_jobs['total']} for {first_client['name']}")
     print(f"linked site jobs: {site_jobs['total']} for {first_site['name']}")

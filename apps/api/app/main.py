@@ -2,7 +2,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_cors_origins, get_settings
-from app.routers import clients, evidence_files, health, jobs, reminders, sites
+from app.routers import (
+    ai_drafts,
+    clients,
+    email_import_batches,
+    email_messages,
+    email_record_links,
+    evidence_files,
+    health,
+    jobs,
+    reminders,
+    sites,
+)
 
 
 def create_app() -> FastAPI:
@@ -28,6 +39,10 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(reminders.router)
     app.include_router(evidence_files.router)
+    app.include_router(email_import_batches.router)
+    app.include_router(email_messages.router)
+    app.include_router(email_record_links.router)
+    app.include_router(ai_drafts.router)
     return app
 
 

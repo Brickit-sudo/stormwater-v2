@@ -1,6 +1,26 @@
 """Pydantic schemas for API request and response bodies."""
 
+from app.schemas.ai_draft import AiDraftCreate, AiDraftListResponse, AiDraftRead, AiDraftUpdate
 from app.schemas.client import ClientBase, ClientCreate, ClientListResponse, ClientRead, ClientUpdate
+from app.schemas.email_import_batch import (
+    EmailImportBatchBase,
+    EmailImportBatchCreate,
+    EmailImportBatchListResponse,
+    EmailImportBatchRead,
+)
+from app.schemas.email_message import (
+    EmailMessageBase,
+    EmailMessageCreate,
+    EmailMessageListResponse,
+    EmailMessageRead,
+    EmailMessageUpdate,
+)
+from app.schemas.email_record_link import (
+    EmailRecordLinkBase,
+    EmailRecordLinkCreate,
+    EmailRecordLinkListResponse,
+    EmailRecordLinkRead,
+)
 from app.schemas.evidence_file import (
     EvidenceFileBase,
     EvidenceFileCreate,
@@ -27,11 +47,28 @@ from app.schemas.site import (
 )
 
 __all__ = [
+    "AiDraftCreate",
+    "AiDraftListResponse",
+    "AiDraftRead",
+    "AiDraftUpdate",
     "ClientBase",
     "ClientCreate",
     "ClientListResponse",
     "ClientRead",
     "ClientUpdate",
+    "EmailImportBatchBase",
+    "EmailImportBatchCreate",
+    "EmailImportBatchListResponse",
+    "EmailImportBatchRead",
+    "EmailMessageBase",
+    "EmailMessageCreate",
+    "EmailMessageListResponse",
+    "EmailMessageRead",
+    "EmailMessageUpdate",
+    "EmailRecordLinkBase",
+    "EmailRecordLinkCreate",
+    "EmailRecordLinkListResponse",
+    "EmailRecordLinkRead",
     "EvidenceFileBase",
     "EvidenceFileCreate",
     "EvidenceFileListResponse",

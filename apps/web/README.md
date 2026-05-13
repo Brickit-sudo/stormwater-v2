@@ -40,7 +40,7 @@ Use `--reset-seed` when you want to remove only existing `legacy_source='seed_de
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, eight jobs, four local reminders, and seven `evidence_files` metadata rows that drive the Drive/File panels and `/schedule`.
+Copy the printed organization UUID into `NEXT_PUBLIC_DEMO_ORG_ID`. The current deterministic seed prints `850c47b8-6d32-58a0-8605-955527cadbf3` and creates one organization, three clients, five sites, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, and three manual AI drafts that drive the CRM, `/schedule`, `/map`, and `/work`.
 
 ## Run
 
@@ -65,6 +65,7 @@ Open:
 - `http://127.0.0.1:3000/crm/jobs`
 - `http://127.0.0.1:3000/schedule`
 - `http://127.0.0.1:3000/map`
+- `http://127.0.0.1:3000/work`
 
 ## CRM Routes
 
@@ -73,6 +74,7 @@ Open:
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.
 - `/schedule` lists local reminders grouped by Overdue, Today, Upcoming, and Completed; it supports New, Edit, Mark Complete, Archive, status filtering, and priority filtering.
 - `/map` shows non-archived sites with stored coordinates on a lazy-loaded Leaflet map, supports real status/client filters, manual Refresh Map, marker selection, and an Open Sites link.
+- `/work` shows Files, Emails, AI Drafts, and Import Batches. Emails are local records with paginated search/filtering and selected-message preview. AI Drafts are manual storage only. Import Batches show local metadata and clearly note that Outlook import is not connected yet.
 
 The Jobs detail panel also shows a compact reminders section for the selected job. It can add a reminder for that job, mark job reminders complete, and archive them. Editing reminders stays on `/schedule`.
 
@@ -95,3 +97,9 @@ Each CRM detail view (Client, Site, Job) renders a Drive/File panel scoped to th
 - **Refresh** - re-fetches the list.
 
 This phase is metadata-only. There is no binary upload, no Google Drive OAuth, no folder creation, no folder scanning, no sync, no report or photosheet generation. Those are deferred and intentionally not exposed as disabled placeholder buttons.
+
+## Work Hub
+
+Work Hub is local/providerless in this phase. It does not connect to Outlook, call Microsoft Graph, sync Gmail, send email, create Outlook drafts, scan a mailbox, download attachments, or run AI generation.
+
+Every visible Work Hub action does local work: switch views, search/filter local emails, paginate lists, link an email to a Client/Site/Job, create/edit/archive manual drafts, mark drafts reviewed/used, archive email records, and open stored file/link URLs.

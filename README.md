@@ -89,6 +89,7 @@ Open:
 - `http://127.0.0.1:3000/crm/jobs`
 - `http://127.0.0.1:3000/schedule`
 - `http://127.0.0.1:3000/map`
+- `http://127.0.0.1:3000/work`
 
 Optional API smoke after the API is running:
 
@@ -131,6 +132,7 @@ The first usable CRM UI is available at:
 - `http://localhost:3000/crm/jobs`
 - `http://localhost:3000/schedule`
 - `http://localhost:3000/map`
+- `http://localhost:3000/work`
 
 ### API
 
@@ -190,7 +192,13 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, and seven file metadata rows, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
+The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, seven file metadata rows, one local email import batch, five local email messages, and three manual AI drafts, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
+
+### Work Hub And Email Intelligence
+
+The `/work` route is a local, providerless Work Hub. It shows existing file links, seeded/local email records, manual AI drafts, and local import batch metadata. It does not connect to Outlook yet, does not call Microsoft Graph, does not sync a mailbox, does not send email, and does not generate AI text.
+
+This foundation prepares for a future bounded Outlook import preview. The next phase should connect Microsoft Graph only for preview/import, with explicit limits and dedupe, after auth and organization scoping are ready.
 
 ### Local Scheduling And Reminders
 

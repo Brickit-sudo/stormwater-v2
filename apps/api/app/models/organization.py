@@ -25,3 +25,7 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reports: Mapped[list["Report"]] = relationship(back_populates="organization")
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="organization")
     reminders: Mapped[list["Reminder"]] = relationship(back_populates="organization")
+    email_import_batches: Mapped[list["EmailImportBatch"]] = relationship()
+    email_messages: Mapped[list["EmailMessage"]] = relationship()
+    email_record_links: Mapped[list["EmailRecordLink"]] = relationship()
+    ai_drafts: Mapped[list["AiDraft"]] = relationship()

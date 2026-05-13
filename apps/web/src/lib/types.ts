@@ -258,3 +258,191 @@ export type EvidenceFileListOptions = {
   limit?: number;
   offset?: number;
 };
+
+export type EmailMessageStatus = "unlinked" | "linked" | "archived";
+
+export type EmailMessage = {
+  id: UUID;
+  organization_id: UUID;
+  import_batch_id: UUID | null;
+  client_id: UUID | null;
+  site_id: UUID | null;
+  job_id: UUID | null;
+  provider: string;
+  provider_message_id: string | null;
+  provider_conversation_id: string | null;
+  internet_message_id: string | null;
+  subject: string;
+  sender: string;
+  recipients_json: Array<Record<string, unknown>>;
+  received_at: string | null;
+  snippet: string | null;
+  body_text: string;
+  body_html: string | null;
+  attachments_json: Array<Record<string, unknown>>;
+  links_json: Array<Record<string, unknown>>;
+  web_link: string | null;
+  status: EmailMessageStatus;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type EmailMessageCreateInput = {
+  import_batch_id?: UUID | null;
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+  provider?: string;
+  provider_message_id?: string | null;
+  provider_conversation_id?: string | null;
+  internet_message_id?: string | null;
+  subject: string;
+  sender: string;
+  recipients_json?: Array<Record<string, unknown>>;
+  received_at?: string | null;
+  snippet?: string | null;
+  body_text?: string;
+  body_html?: string | null;
+  attachments_json?: Array<Record<string, unknown>>;
+  links_json?: Array<Record<string, unknown>>;
+  web_link?: string | null;
+  status?: EmailMessageStatus;
+};
+
+export type EmailMessageUpdateInput = Partial<EmailMessageCreateInput>;
+
+export type EmailMessageListOptions = {
+  organizationId: UUID;
+  search?: string;
+  status?: EmailMessageStatus;
+  clientId?: UUID;
+  siteId?: UUID;
+  jobId?: UUID;
+  provider?: string;
+  receivedBefore?: string;
+  receivedAfter?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type EmailRecordLink = {
+  id: UUID;
+  organization_id: UUID;
+  email_message_id: UUID;
+  client_id: UUID | null;
+  site_id: UUID | null;
+  job_id: UUID | null;
+  link_reason: string;
+  confidence: number;
+  created_at: string;
+};
+
+export type EmailRecordLinkCreateInput = {
+  email_message_id: UUID;
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+  link_reason?: string;
+  confidence?: number;
+};
+
+export type EmailImportBatchStatus =
+  | "previewed"
+  | "imported"
+  | "failed"
+  | "archived"
+  | "seed";
+
+export type EmailImportBatch = {
+  id: UUID;
+  organization_id: UUID;
+  provider: string;
+  import_mode: string;
+  folder_id: string | null;
+  search_query: string | null;
+  date_from: string | null;
+  date_to: string | null;
+  status: EmailImportBatchStatus;
+  preview_count: number;
+  imported_count: number;
+  skipped_count: number;
+  duplicate_count: number;
+  error_count: number;
+  request_json: Record<string, unknown> | null;
+  result_summary_json: Record<string, unknown> | null;
+  created_at: string;
+  completed_at: string | null;
+  archived_at: string | null;
+};
+
+export type EmailImportBatchCreateInput = {
+  provider?: string;
+  import_mode?: string;
+  folder_id?: string | null;
+  search_query?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  status?: EmailImportBatchStatus;
+  preview_count?: number;
+  imported_count?: number;
+  skipped_count?: number;
+  duplicate_count?: number;
+  error_count?: number;
+  request_json?: Record<string, unknown> | null;
+  result_summary_json?: Record<string, unknown> | null;
+  completed_at?: string | null;
+};
+
+export type EmailImportBatchListOptions = {
+  organizationId: UUID;
+  status?: EmailImportBatchStatus;
+  provider?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type AiDraftStatus = "draft" | "reviewed" | "used" | "archived";
+
+export type AiDraft = {
+  id: UUID;
+  organization_id: UUID;
+  client_id: UUID | null;
+  site_id: UUID | null;
+  job_id: UUID | null;
+  email_message_id: UUID | null;
+  draft_type: string;
+  title: string;
+  prompt_context: string | null;
+  draft_text: string;
+  status: AiDraftStatus;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type AiDraftCreateInput = {
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+  email_message_id?: UUID | null;
+  draft_type?: string;
+  title: string;
+  prompt_context?: string | null;
+  draft_text: string;
+  status?: AiDraftStatus;
+};
+
+export type AiDraftUpdateInput = Partial<AiDraftCreateInput>;
+
+export type AiDraftListOptions = {
+  organizationId: UUID;
+  status?: AiDraftStatus;
+  draftType?: string;
+  clientId?: UUID;
+  siteId?: UUID;
+  jobId?: UUID;
+  emailMessageId?: UUID;
+  limit?: number;
+  offset?: number;
+};

@@ -19,6 +19,10 @@ const titles: Record<string, { title: string; subtitle: string }> = {
     title: "Command Center",
     subtitle: "Stormwater operations overview",
   },
+  "/work": {
+    title: "Work Hub",
+    subtitle: "Files, email records, drafts, and local import history",
+  },
 };
 
 function resolveSection(pathname: string) {

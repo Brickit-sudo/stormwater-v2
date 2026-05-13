@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { label: "Jobs", href: "/crm/jobs", description: "Work orders" },
   { label: "Schedule", href: "/schedule", description: "Reminders" },
   { label: "Map", href: "/map", description: "Locations" },
+  { label: "Work Hub", href: "/work", description: "Files & email" },
 ];
 
 export default function Sidebar() {

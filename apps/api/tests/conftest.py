@@ -13,7 +13,19 @@ from app.main import app
 from app.models import Organization
 
 
-CRM_TABLE_NAMES = ["organizations", "users", "clients", "sites", "jobs", "reminders", "evidence_files"]
+CRM_TABLE_NAMES = [
+    "organizations",
+    "users",
+    "clients",
+    "sites",
+    "jobs",
+    "reminders",
+    "evidence_files",
+    "email_import_batches",
+    "email_messages",
+    "email_record_links",
+    "ai_drafts",
+]
 
 
 @pytest.fixture()

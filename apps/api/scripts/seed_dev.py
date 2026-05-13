@@ -17,7 +17,18 @@ if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
 from app.db import get_session_factory  # noqa: E402
-from app.models import Client, EvidenceFile, Job, Organization, Reminder, Site  # noqa: E402
+from app.models import (  # noqa: E402
+    AiDraft,
+    Client,
+    EmailImportBatch,
+    EmailMessage,
+    EmailRecordLink,
+    EvidenceFile,
+    Job,
+    Organization,
+    Reminder,
+    Site,
+)
 
 
 LEGACY_SOURCE = "seed_dev"
@@ -465,6 +476,254 @@ SEED_EVIDENCE_FILES: list[dict[str, Any]] = [
 ]
 
 
+SEED_EMAIL_IMPORT_BATCHES: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("email_import_batch:work-hub-seed"),
+        "provider": "outlook",
+        "import_mode": "manual_seed",
+        "folder_id": "seed-inbox",
+        "search_query": "stormwater OR catch basin OR BMP",
+        "date_from": datetime(2026, 5, 1, 0, 0, tzinfo=UTC),
+        "date_to": datetime(2026, 5, 12, 23, 59, tzinfo=UTC),
+        "status": "seed",
+        "preview_count": 5,
+        "imported_count": 5,
+        "skipped_count": 0,
+        "duplicate_count": 0,
+        "error_count": 0,
+        "request_json": {
+            "source": "seed_dev",
+            "note": "Local Work Hub seed only; Outlook is not connected yet.",
+        },
+        "result_summary_json": {
+            "summary": "Seeded five local stormwater email records for Work Hub testing.",
+        },
+        "completed_at": datetime(2026, 5, 12, 16, 0, tzinfo=UTC),
+    },
+]
+
+
+SEED_EMAIL_MESSAGES: list[dict[str, Any]] = [
+    {
+        "legacy_id": "email:bayside-access-window",
+        "id": _seed_uuid("email:bayside-access-window"),
+        "import_batch_id": _seed_uuid("email_import_batch:work-hub-seed"),
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-2026-spring-inspection",
+        "provider": "outlook",
+        "provider_message_id": "seed-outlook-bayside-access-window",
+        "provider_conversation_id": "seed-conv-bayside-access",
+        "internet_message_id": "<seed-bayside-access@example>",
+        "subject": "Bayside inspection access window",
+        "sender": "Mara Whitcomb <mara.whitcomb@pinetree.example>",
+        "recipients_json": [
+            {"name": "Sterling Operations", "email": "ops@sterling.example"},
+        ],
+        "received_at": datetime(2026, 5, 12, 13, 20, tzinfo=UTC),
+        "snippet": "Can your crew arrive before the stores open for the BMP inspection?",
+        "body_text": (
+            "Can your crew arrive before the stores open for the BMP inspection? "
+            "The property manager can unlock the rear gate at 6:30 AM."
+        ),
+        "body_html": None,
+        "attachments_json": [
+            {"name": "Bayside access map.pdf", "size_bytes": 186400, "content_type": "application/pdf"},
+        ],
+        "links_json": [
+            {"label": "Bayside site folder", "url": "https://drive.google.com/drive/folders/seed-site-bayside-retail-plaza"},
+        ],
+        "web_link": "https://outlook.office.com/mail/seed-bayside-access-window",
+        "status": "linked",
+    },
+    {
+        "legacy_id": "email:catch-basin-blocked-structures",
+        "id": _seed_uuid("email:catch-basin-blocked-structures"),
+        "import_batch_id": _seed_uuid("email_import_batch:work-hub-seed"),
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-catch-basin-cleaning",
+        "provider": "outlook",
+        "provider_message_id": "seed-outlook-catch-basin-blocked",
+        "provider_conversation_id": "seed-conv-catch-basin-blocked",
+        "internet_message_id": "<seed-catch-basin-blocked@example>",
+        "subject": "Two blocked catch basins need a revisit",
+        "sender": "Field Crew <crew@sterling.example>",
+        "recipients_json": [
+            {"name": "Sterling PM", "email": "pm@sterling.example"},
+        ],
+        "received_at": datetime(2026, 5, 11, 20, 45, tzinfo=UTC),
+        "snippet": "CB-4 and CB-7 were blocked by vehicles during the cleanout visit.",
+        "body_text": (
+            "CB-4 and CB-7 were blocked by vehicles during the cleanout visit. "
+            "Recommend a short return visit after the tenant notice goes out."
+        ),
+        "body_html": None,
+        "attachments_json": [
+            {"name": "blocked-structures.jpg", "size_bytes": 944200, "content_type": "image/jpeg"},
+        ],
+        "links_json": [
+            {"label": "Photo placeholder", "url": "https://drive.google.com/drive/folders/seed-bayside-2026-photos"},
+        ],
+        "web_link": "https://outlook.office.com/mail/seed-catch-basin-blocked",
+        "status": "linked",
+    },
+    {
+        "legacy_id": "email:augusta-disposal-ticket",
+        "id": _seed_uuid("email:augusta-disposal-ticket"),
+        "import_batch_id": _seed_uuid("email_import_batch:work-hub-seed"),
+        "target_type": "job",
+        "target_legacy_id": "job:augusta-winter-sediment-cleanout",
+        "provider": "outlook",
+        "provider_message_id": "seed-outlook-augusta-disposal-ticket",
+        "provider_conversation_id": "seed-conv-augusta-disposal",
+        "internet_message_id": "<seed-augusta-disposal@example>",
+        "subject": "Augusta cleanout disposal ticket",
+        "sender": "Disposal Desk <tickets@disposal.example>",
+        "recipients_json": [
+            {"name": "Sterling Admin", "email": "admin@sterling.example"},
+        ],
+        "received_at": datetime(2026, 4, 23, 14, 10, tzinfo=UTC),
+        "snippet": "Attached is the disposal ticket for the Augusta winter sediment cleanout.",
+        "body_text": "Attached is the disposal ticket for the Augusta winter sediment cleanout.",
+        "body_html": None,
+        "attachments_json": [
+            {"name": "AUG-2026-SED-disposal-ticket.pdf", "size_bytes": 224300, "content_type": "application/pdf"},
+        ],
+        "links_json": [
+            {"label": "Maintenance verification", "url": "https://drive.google.com/file/d/seed-augusta-maintenance-verification/view"},
+        ],
+        "web_link": "https://outlook.office.com/mail/seed-augusta-disposal",
+        "status": "linked",
+    },
+    {
+        "legacy_id": "email:northeast-portfolio-request",
+        "id": _seed_uuid("email:northeast-portfolio-request"),
+        "import_batch_id": _seed_uuid("email_import_batch:work-hub-seed"),
+        "target_type": "client",
+        "target_legacy_id": "client:northeast-retail-portfolio",
+        "provider": "outlook",
+        "provider_message_id": "seed-outlook-northeast-portfolio-request",
+        "provider_conversation_id": "seed-conv-northeast-portfolio",
+        "internet_message_id": "<seed-northeast-portfolio@example>",
+        "subject": "Stormwater portfolio service question",
+        "sender": "Evan Calder <facilities@northeastretail.example>",
+        "recipients_json": [
+            {"name": "Sterling Sales", "email": "sales@sterling.example"},
+        ],
+        "received_at": datetime(2026, 5, 9, 18, 25, tzinfo=UTC),
+        "snippet": "Can you summarize what the baseline onboarding visit includes?",
+        "body_text": (
+            "Can you summarize what the baseline onboarding visit includes? "
+            "We are comparing a few vendors for the retail portfolio."
+        ),
+        "body_html": None,
+        "attachments_json": [],
+        "links_json": [],
+        "web_link": "https://outlook.office.com/mail/seed-northeast-portfolio",
+        "status": "linked",
+    },
+    {
+        "legacy_id": "email:unlinked-ms4-newsletter",
+        "id": _seed_uuid("email:unlinked-ms4-newsletter"),
+        "import_batch_id": _seed_uuid("email_import_batch:work-hub-seed"),
+        "target_type": None,
+        "target_legacy_id": None,
+        "provider": "outlook",
+        "provider_message_id": "seed-outlook-ms4-newsletter",
+        "provider_conversation_id": "seed-conv-ms4-newsletter",
+        "internet_message_id": "<seed-ms4-newsletter@example>",
+        "subject": "MS4 permit newsletter",
+        "sender": "Stormwater Bulletin <bulletin@example>",
+        "recipients_json": [
+            {"name": "Sterling Admin", "email": "admin@sterling.example"},
+        ],
+        "received_at": datetime(2026, 5, 8, 12, 0, tzinfo=UTC),
+        "snippet": "Monthly regulatory newsletter with regional MS4 reminders.",
+        "body_text": "Monthly regulatory newsletter with regional MS4 reminders.",
+        "body_html": None,
+        "attachments_json": [],
+        "links_json": [
+            {"label": "Regional MS4 notice", "url": "https://example.com/ms4-newsletter"},
+        ],
+        "web_link": "https://outlook.office.com/mail/seed-ms4-newsletter",
+        "status": "unlinked",
+    },
+]
+
+
+SEED_EMAIL_RECORD_LINKS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("email_record_link:bayside-access-window"),
+        "email_legacy_id": "email:bayside-access-window",
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-2026-spring-inspection",
+        "link_reason": "Seeded manual Work Hub link",
+        "confidence": 1.0,
+    },
+    {
+        "id": _seed_uuid("email_record_link:catch-basin-blocked-structures"),
+        "email_legacy_id": "email:catch-basin-blocked-structures",
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-catch-basin-cleaning",
+        "link_reason": "Seeded manual Work Hub link",
+        "confidence": 1.0,
+    },
+    {
+        "id": _seed_uuid("email_record_link:northeast-portfolio-request"),
+        "email_legacy_id": "email:northeast-portfolio-request",
+        "target_type": "client",
+        "target_legacy_id": "client:northeast-retail-portfolio",
+        "link_reason": "Seeded manual Work Hub link",
+        "confidence": 1.0,
+    },
+]
+
+
+SEED_AI_DRAFTS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("ai_draft:bayside-access-reply"),
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-2026-spring-inspection",
+        "email_legacy_id": "email:bayside-access-window",
+        "draft_type": "email_reply",
+        "title": "Bayside access confirmation reply",
+        "prompt_context": "Manual draft tied to the seeded Bayside access email.",
+        "draft_text": (
+            "Hi Mara,\n\nYes, Sterling can arrive at 6:30 AM for the Bayside BMP inspection. "
+            "We will keep the crew focused on the rear gate access route and avoid the retail traffic window.\n\nThanks,\nSterling Stormwater"
+        ),
+        "status": "draft",
+    },
+    {
+        "id": _seed_uuid("ai_draft:blocked-catch-basin-revisit"),
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-catch-basin-cleaning",
+        "email_legacy_id": "email:catch-basin-blocked-structures",
+        "draft_type": "email_reply",
+        "title": "Blocked catch basin revisit note",
+        "prompt_context": "Manual draft for crew/PM follow-up.",
+        "draft_text": (
+            "We documented CB-4 and CB-7 as blocked by vehicles. "
+            "A short return visit after tenant notice should close out the remaining structures."
+        ),
+        "status": "reviewed",
+    },
+    {
+        "id": _seed_uuid("ai_draft:portfolio-onboarding-summary"),
+        "target_type": "client",
+        "target_legacy_id": "client:northeast-retail-portfolio",
+        "email_legacy_id": "email:northeast-portfolio-request",
+        "draft_type": "scope_summary",
+        "title": "Portfolio onboarding visit summary",
+        "prompt_context": "Manual local draft; AI generation is intentionally deferred.",
+        "draft_text": (
+            "The baseline onboarding visit documents BMP inventory, access constraints, drainage concerns, "
+            "and report-readiness gaps for each site before recurring work is scheduled."
+        ),
+        "status": "draft",
+    },
+]
+
+
 def seed_counts() -> dict[str, int]:
     return {
         "organizations": 1,
@@ -473,6 +732,10 @@ def seed_counts() -> dict[str, int]:
         "jobs": len(SEED_JOBS),
         "reminders": len(SEED_REMINDERS),
         "evidence_files": len(SEED_EVIDENCE_FILES),
+        "email_import_batches": len(SEED_EMAIL_IMPORT_BATCHES),
+        "email_messages": len(SEED_EMAIL_MESSAGES),
+        "email_record_links": len(SEED_EMAIL_RECORD_LINKS),
+        "ai_drafts": len(SEED_AI_DRAFTS),
     }
 
 
@@ -582,6 +845,20 @@ def _job_values(
 
 def reset_seed(session: Session) -> dict[str, int]:
     deleted: dict[str, int] = {}
+    for model, records in (
+        (AiDraft, SEED_AI_DRAFTS),
+        (EmailRecordLink, SEED_EMAIL_RECORD_LINKS),
+        (EmailMessage, SEED_EMAIL_MESSAGES),
+        (EmailImportBatch, SEED_EMAIL_IMPORT_BATCHES),
+    ):
+        result = session.execute(
+            delete(model).where(
+                model.organization_id == DEMO_ORGANIZATION_ID,
+                model.id.in_([record["id"] for record in records]),
+            ),
+        )
+        deleted[model.__tablename__] = result.rowcount or 0
+
     reminder_result = session.execute(
         delete(Reminder).where(
             Reminder.organization_id == DEMO_ORGANIZATION_ID,
@@ -684,6 +961,212 @@ def _evidence_file_values(
     return values
 
 
+def _scope_ids_from_target(
+    record: dict[str, Any],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+) -> dict[str, uuid.UUID | None]:
+    target_type = record.get("target_type")
+    target_legacy_id = record.get("target_legacy_id")
+    scope: dict[str, uuid.UUID | None] = {
+        "client_id": None,
+        "site_id": None,
+        "job_id": None,
+    }
+    if target_type is None:
+        return scope
+    if target_type == "client":
+        scope["client_id"] = client_by_legacy_id[target_legacy_id].id
+    elif target_type == "site":
+        site = site_by_legacy_id[target_legacy_id]
+        scope["client_id"] = site.client_id
+        scope["site_id"] = site.id
+    elif target_type == "job":
+        job = job_by_legacy_id[target_legacy_id]
+        scope["client_id"] = job.client_id
+        scope["site_id"] = job.site_id
+        scope["job_id"] = job.id
+    else:
+        raise RuntimeError(f"Unsupported target_type: {target_type}")
+    return scope
+
+
+def _email_import_batch_values(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in record.items()
+        if key != "id"
+    }
+
+
+def _upsert_seed_import_batch(
+    session: Session,
+    record: dict[str, Any],
+) -> EmailImportBatch:
+    values = _email_import_batch_values(record)
+    instance = session.get(EmailImportBatch, record["id"])
+    if instance is None:
+        instance = EmailImportBatch(
+            id=record["id"],
+            organization_id=DEMO_ORGANIZATION_ID,
+            **values,
+        )
+        session.add(instance)
+    else:
+        if instance.organization_id != DEMO_ORGANIZATION_ID:
+            raise RuntimeError(f"Refusing to overwrite email import batch row with id {record['id']}.")
+        for field, value in values.items():
+            setattr(instance, field, value)
+        instance.archived_at = None
+        session.add(instance)
+    session.flush()
+    return instance
+
+
+def _email_message_values(
+    record: dict[str, Any],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+) -> dict[str, Any]:
+    values = {
+        key: value
+        for key, value in record.items()
+        if key not in {"id", "legacy_id", "target_type", "target_legacy_id"}
+    }
+    values.update(
+        _scope_ids_from_target(
+            record,
+            client_by_legacy_id,
+            site_by_legacy_id,
+            job_by_legacy_id,
+        ),
+    )
+    return values
+
+
+def _upsert_seed_email_message(
+    session: Session,
+    record: dict[str, Any],
+    values: dict[str, Any],
+) -> EmailMessage:
+    instance = session.get(EmailMessage, record["id"])
+    if instance is None:
+        instance = EmailMessage(
+            id=record["id"],
+            organization_id=DEMO_ORGANIZATION_ID,
+            **values,
+        )
+        session.add(instance)
+    else:
+        if instance.organization_id != DEMO_ORGANIZATION_ID:
+            raise RuntimeError(f"Refusing to overwrite email message row with id {record['id']}.")
+        for field, value in values.items():
+            setattr(instance, field, value)
+        instance.archived_at = None
+        session.add(instance)
+    session.flush()
+    return instance
+
+
+def _email_record_link_values(
+    record: dict[str, Any],
+    email_by_legacy_id: dict[str, EmailMessage],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+) -> dict[str, Any]:
+    values = {
+        key: value
+        for key, value in record.items()
+        if key not in {"id", "email_legacy_id", "target_type", "target_legacy_id"}
+    }
+    values["email_message_id"] = email_by_legacy_id[record["email_legacy_id"]].id
+    target_scope = _scope_ids_from_target(
+        record,
+        client_by_legacy_id,
+        site_by_legacy_id,
+        job_by_legacy_id,
+    )
+    target_type = record["target_type"]
+    values["client_id"] = target_scope["client_id"] if target_type == "client" else None
+    values["site_id"] = target_scope["site_id"] if target_type == "site" else None
+    values["job_id"] = target_scope["job_id"] if target_type == "job" else None
+    return values
+
+
+def _upsert_seed_email_record_link(
+    session: Session,
+    record: dict[str, Any],
+    values: dict[str, Any],
+) -> EmailRecordLink:
+    instance = session.get(EmailRecordLink, record["id"])
+    if instance is None:
+        instance = EmailRecordLink(
+            id=record["id"],
+            organization_id=DEMO_ORGANIZATION_ID,
+            **values,
+        )
+        session.add(instance)
+    else:
+        if instance.organization_id != DEMO_ORGANIZATION_ID:
+            raise RuntimeError(f"Refusing to overwrite email record link row with id {record['id']}.")
+        for field, value in values.items():
+            setattr(instance, field, value)
+        session.add(instance)
+    session.flush()
+    return instance
+
+
+def _ai_draft_values(
+    record: dict[str, Any],
+    email_by_legacy_id: dict[str, EmailMessage],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+) -> dict[str, Any]:
+    values = {
+        key: value
+        for key, value in record.items()
+        if key not in {"id", "target_type", "target_legacy_id", "email_legacy_id"}
+    }
+    values["email_message_id"] = email_by_legacy_id[record["email_legacy_id"]].id
+    values.update(
+        _scope_ids_from_target(
+            record,
+            client_by_legacy_id,
+            site_by_legacy_id,
+            job_by_legacy_id,
+        ),
+    )
+    return values
+
+
+def _upsert_seed_ai_draft(
+    session: Session,
+    record: dict[str, Any],
+    values: dict[str, Any],
+) -> AiDraft:
+    instance = session.get(AiDraft, record["id"])
+    if instance is None:
+        instance = AiDraft(
+            id=record["id"],
+            organization_id=DEMO_ORGANIZATION_ID,
+            **values,
+        )
+        session.add(instance)
+    else:
+        if instance.organization_id != DEMO_ORGANIZATION_ID:
+            raise RuntimeError(f"Refusing to overwrite AI draft row with id {record['id']}.")
+        for field, value in values.items():
+            setattr(instance, field, value)
+        instance.archived_at = None
+        session.add(instance)
+    session.flush()
+    return instance
+
+
 def seed(session: Session) -> Organization:
     _validate_seed_site_coordinates()
     organization = _ensure_organization(session)
@@ -733,6 +1216,49 @@ def seed(session: Session) -> Organization:
             ),
         )
 
+    for record in SEED_EMAIL_IMPORT_BATCHES:
+        _upsert_seed_import_batch(session, record)
+
+    email_by_legacy_id: dict[str, EmailMessage] = {}
+    for record in SEED_EMAIL_MESSAGES:
+        email = _upsert_seed_email_message(
+            session,
+            record,
+            _email_message_values(
+                record,
+                client_by_legacy_id,
+                site_by_legacy_id,
+                job_by_legacy_id,
+            ),
+        )
+        email_by_legacy_id[record["legacy_id"]] = email
+
+    for record in SEED_EMAIL_RECORD_LINKS:
+        _upsert_seed_email_record_link(
+            session,
+            record,
+            _email_record_link_values(
+                record,
+                email_by_legacy_id,
+                client_by_legacy_id,
+                site_by_legacy_id,
+                job_by_legacy_id,
+            ),
+        )
+
+    for record in SEED_AI_DRAFTS:
+        _upsert_seed_ai_draft(
+            session,
+            record,
+            _ai_draft_values(
+                record,
+                email_by_legacy_id,
+                client_by_legacy_id,
+                site_by_legacy_id,
+                job_by_legacy_id,
+            ),
+        )
+
     session.commit()
     session.refresh(organization)
     return organization
@@ -760,7 +1286,11 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "Deleted seed_dev rows: "
                 f"{deleted['clients']} clients, {deleted['sites']} sites, "
                 f"{deleted['jobs']} jobs, {deleted['reminders']} reminders, "
-                f"{deleted['evidence_files']} files.",
+                f"{deleted['evidence_files']} files, "
+                f"{deleted['email_import_batches']} email batches, "
+                f"{deleted['email_messages']} emails, "
+                f"{deleted['email_record_links']} email links, "
+                f"{deleted['ai_drafts']} AI drafts.",
             )
 
         organization = seed(session)
@@ -769,7 +1299,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             "Seeded demo CRM data: "
             f"{counts['organizations']} organization, {counts['clients']} clients, "
             f"{counts['sites']} sites, {counts['jobs']} jobs, "
-            f"{counts['reminders']} reminders, {counts['evidence_files']} files.",
+            f"{counts['reminders']} reminders, {counts['evidence_files']} files, "
+            f"{counts['email_import_batches']} email batch, "
+            f"{counts['email_messages']} emails, "
+            f"{counts['ai_drafts']} AI drafts.",
         )
         print(f"organization_id={organization.id}")
         print(f"NEXT_PUBLIC_DEMO_ORG_ID={organization.id}")

@@ -75,7 +75,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The deterministic seed creates one organization, three clients, five sites with public approximate map coordinates, eight jobs, four local reminders, and seven `evidence_files` metadata rows. The seven file rows include client-level, site-level, and job-level examples to exercise the Drive/File panel on each CRM detail view. The four reminders include overdue, due-today, upcoming, and completed examples for `/schedule`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
+The deterministic seed creates one organization, three clients, five sites with public approximate map coordinates, eight jobs, four local reminders, seven `evidence_files` metadata rows, one local email import batch, five local email messages, three email record links, and three manual AI drafts. The file rows exercise the Drive/File panel; the reminder rows exercise `/schedule`; the email rows exercise `/work`. Re-run without `--reset-seed` to update those rows in place. Re-run with `--reset-seed` to delete only the demo organization's seed rows before reseeding.
 
 Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 
@@ -178,10 +178,28 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `GET /v1/files/{file_id}`
 - `PATCH /v1/files/{file_id}`
 - `DELETE /v1/files/{file_id}`
+- `GET /v1/email-import-batches`
+- `POST /v1/email-import-batches`
+- `GET /v1/email-import-batches/{batch_id}`
+- `GET /v1/email-messages`
+- `POST /v1/email-messages`
+- `GET /v1/email-messages/{email_message_id}`
+- `PATCH /v1/email-messages/{email_message_id}`
+- `DELETE /v1/email-messages/{email_message_id}`
+- `POST /v1/email-record-links`
+- `GET /v1/email-record-links`
+- `DELETE /v1/email-record-links/{link_id}`
+- `GET /v1/ai-drafts`
+- `POST /v1/ai-drafts`
+- `GET /v1/ai-drafts/{draft_id}`
+- `PATCH /v1/ai-drafts/{draft_id}`
+- `DELETE /v1/ai-drafts/{draft_id}`
 
 The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` table. This phase does not implement binary upload, Google Drive OAuth, folder creation, folder scanning, or sync. `DELETE` is a soft archive (`archived_at`) - it never touches the actual file in Google Drive.
 
 The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
+
+The Work Hub email endpoints are local/providerless in this phase. `/v1/email-messages` stores seeded or manually created local message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores manual draft text linked to Client/Site/Job/Email records; it does not generate text, send email, or create Outlook drafts. `/v1/email-import-batches` stores local batch metadata only. Outlook OAuth and Microsoft Graph import are deferred to a future bounded import preview phase.
 
 Filter the reminder list with `status`, `priority`, `client_id`, `site_id`, `job_id`, `due_before`, and `due_after` query params:
 

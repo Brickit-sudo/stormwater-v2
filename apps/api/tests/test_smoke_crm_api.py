@@ -13,4 +13,7 @@ def test_smoke_script_defaults_match_seed_constants() -> None:
         "reminders": 4,
         "open_reminders": 3,
         "files": 7,
+        "email_messages": 5,
+        "ai_drafts": 3,
+        "email_import_batches": 1,
     }

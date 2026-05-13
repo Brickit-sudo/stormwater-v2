@@ -2,9 +2,13 @@ import app.models
 from app.db import Base
 from app.models import (
     ActivityLog,
+    AiDraft,
     BmpSystem,
     Client,
     Contact,
+    EmailImportBatch,
+    EmailMessage,
+    EmailRecordLink,
     EvidenceFile,
     Job,
     Observation,
@@ -22,6 +26,10 @@ EXPECTED_TABLES = {
     "bmp_systems",
     "clients",
     "contacts",
+    "ai_drafts",
+    "email_import_batches",
+    "email_messages",
+    "email_record_links",
     "evidence_files",
     "jobs",
     "observations",
@@ -66,6 +74,16 @@ EXPECTED_INDEXES = {
     "ix_reminders_organization_id_job_id",
     "ix_reminders_organization_id_site_id",
     "ix_reminders_organization_id_client_id",
+    "ix_email_import_batches_organization_id_created_at",
+    "ix_email_messages_organization_id_received_at",
+    "ix_email_messages_organization_id_status",
+    "ix_email_messages_organization_id_provider_message_id",
+    "ix_email_messages_organization_id_client_id",
+    "ix_email_messages_organization_id_site_id",
+    "ix_email_messages_organization_id_job_id",
+    "ix_email_record_links_organization_id_email_message_id",
+    "ix_ai_drafts_organization_id_status",
+    "ix_ai_drafts_organization_id_draft_type",
 }
 
 
@@ -97,3 +115,7 @@ def test_core_model_classes_import_cleanly() -> None:
     assert Reminder.__tablename__ == "reminders"
     assert Report.__tablename__ == "reports"
     assert ActivityLog.__tablename__ == "activity_log"
+    assert EmailImportBatch.__tablename__ == "email_import_batches"
+    assert EmailMessage.__tablename__ == "email_messages"
+    assert EmailRecordLink.__tablename__ == "email_record_links"
+    assert AiDraft.__tablename__ == "ai_drafts"

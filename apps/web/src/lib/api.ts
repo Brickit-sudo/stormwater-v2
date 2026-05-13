@@ -1,6 +1,19 @@
 import type {
+  AiDraft,
+  AiDraftCreateInput,
+  AiDraftListOptions,
+  AiDraftUpdateInput,
   Client,
   ClientFormInput,
+  EmailImportBatch,
+  EmailImportBatchCreateInput,
+  EmailImportBatchListOptions,
+  EmailMessage,
+  EmailMessageCreateInput,
+  EmailMessageListOptions,
+  EmailMessageUpdateInput,
+  EmailRecordLink,
+  EmailRecordLinkCreateInput,
   EvidenceFile,
   EvidenceFileCreateInput,
   EvidenceFileListOptions,
@@ -160,6 +173,74 @@ function reminderQuery({
     job_id: jobId,
     due_before: dueBefore,
     due_after: dueAfter,
+    limit,
+    offset,
+  };
+}
+
+function emailMessageQuery({
+  organizationId,
+  search,
+  status,
+  clientId,
+  siteId,
+  jobId,
+  provider,
+  receivedBefore,
+  receivedAfter,
+  limit,
+  offset,
+}: EmailMessageListOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    search,
+    status,
+    client_id: clientId,
+    site_id: siteId,
+    job_id: jobId,
+    provider,
+    received_before: receivedBefore,
+    received_after: receivedAfter,
+    limit,
+    offset,
+  };
+}
+
+function aiDraftQuery({
+  organizationId,
+  status,
+  draftType,
+  clientId,
+  siteId,
+  jobId,
+  emailMessageId,
+  limit,
+  offset,
+}: AiDraftListOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    status,
+    draft_type: draftType,
+    client_id: clientId,
+    site_id: siteId,
+    job_id: jobId,
+    email_message_id: emailMessageId,
+    limit,
+    offset,
+  };
+}
+
+function emailImportBatchQuery({
+  organizationId,
+  status,
+  provider,
+  limit,
+  offset,
+}: EmailImportBatchListOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    status,
+    provider,
     limit,
     offset,
   };
@@ -409,5 +490,162 @@ export function archiveFileLink(
   return apiRequest<EvidenceFile>(`/v1/files/${fileId}`, {
     method: "DELETE",
     query: { organization_id: organizationId },
+  });
+}
+
+export function listEmailMessages(
+  options: EmailMessageListOptions,
+): Promise<ListResponse<EmailMessage>> {
+  return apiRequest<ListResponse<EmailMessage>>("/v1/email-messages", {
+    query: emailMessageQuery(options),
+  });
+}
+
+export function getEmailMessage(
+  emailMessageId: UUID,
+  organizationId: UUID,
+): Promise<EmailMessage> {
+  return apiRequest<EmailMessage>(`/v1/email-messages/${emailMessageId}`, {
+    query: { organization_id: organizationId },
+  });
+}
+
+export function createEmailMessage(
+  organizationId: UUID,
+  input: EmailMessageCreateInput,
+): Promise<EmailMessage> {
+  return apiRequest<EmailMessage>("/v1/email-messages", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateEmailMessage(
+  emailMessageId: UUID,
+  organizationId: UUID,
+  input: EmailMessageUpdateInput,
+): Promise<EmailMessage> {
+  return apiRequest<EmailMessage>(`/v1/email-messages/${emailMessageId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveEmailMessage(
+  emailMessageId: UUID,
+  organizationId: UUID,
+): Promise<EmailMessage> {
+  return apiRequest<EmailMessage>(`/v1/email-messages/${emailMessageId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listEmailRecordLinks(
+  organizationId: UUID,
+  emailMessageId: UUID,
+): Promise<ListResponse<EmailRecordLink>> {
+  return apiRequest<ListResponse<EmailRecordLink>>("/v1/email-record-links", {
+    query: {
+      organization_id: organizationId,
+      email_message_id: emailMessageId,
+    },
+  });
+}
+
+export function createEmailRecordLink(
+  organizationId: UUID,
+  input: EmailRecordLinkCreateInput,
+): Promise<EmailRecordLink> {
+  return apiRequest<EmailRecordLink>("/v1/email-record-links", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function deleteEmailRecordLink(
+  linkId: UUID,
+  organizationId: UUID,
+): Promise<EmailRecordLink> {
+  return apiRequest<EmailRecordLink>(`/v1/email-record-links/${linkId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listAiDrafts(
+  options: AiDraftListOptions,
+): Promise<ListResponse<AiDraft>> {
+  return apiRequest<ListResponse<AiDraft>>("/v1/ai-drafts", {
+    query: aiDraftQuery(options),
+  });
+}
+
+export function getAiDraft(
+  draftId: UUID,
+  organizationId: UUID,
+): Promise<AiDraft> {
+  return apiRequest<AiDraft>(`/v1/ai-drafts/${draftId}`, {
+    query: { organization_id: organizationId },
+  });
+}
+
+export function createAiDraft(
+  organizationId: UUID,
+  input: AiDraftCreateInput,
+): Promise<AiDraft> {
+  return apiRequest<AiDraft>("/v1/ai-drafts", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateAiDraft(
+  draftId: UUID,
+  organizationId: UUID,
+  input: AiDraftUpdateInput,
+): Promise<AiDraft> {
+  return apiRequest<AiDraft>(`/v1/ai-drafts/${draftId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveAiDraft(
+  draftId: UUID,
+  organizationId: UUID,
+): Promise<AiDraft> {
+  return apiRequest<AiDraft>(`/v1/ai-drafts/${draftId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listEmailImportBatches(
+  options: EmailImportBatchListOptions,
+): Promise<ListResponse<EmailImportBatch>> {
+  return apiRequest<ListResponse<EmailImportBatch>>("/v1/email-import-batches", {
+    query: emailImportBatchQuery(options),
+  });
+}
+
+export function getEmailImportBatch(
+  batchId: UUID,
+  organizationId: UUID,
+): Promise<EmailImportBatch> {
+  return apiRequest<EmailImportBatch>(`/v1/email-import-batches/${batchId}`, {
+    query: { organization_id: organizationId },
+  });
+}
+
+export function createEmailImportBatch(
+  organizationId: UUID,
+  input: EmailImportBatchCreateInput,
+): Promise<EmailImportBatch> {
+  return apiRequest<EmailImportBatch>("/v1/email-import-batches", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
   });
 }
