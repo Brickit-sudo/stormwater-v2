@@ -51,7 +51,7 @@ def get_ai_config_status(settings: Settings | None = None) -> IntegrationProvide
                 "deterministic_record_suggestions",
             ]
         ),
-        deferred_capabilities=["auto_send", "outlook_draft_creation", "final_report_generation"],
+        deferred_capabilities=["auto_send", "outlook_draft_revisions", "final_report_generation"],
         message=message,
         model=current.openai_model if configured else None,
     )
@@ -75,7 +75,12 @@ def get_integrations_status(
         outlook_status_value = outlook_auth.connection_status if outlook_configured else "missing"
         outlook_message = outlook_auth.message
         if outlook_auth.connection_status in {"connected", "expired"}:
-            outlook_enabled = ["stored_oauth_connection", "bounded_preview", "import_selected_to_local_email_records"]
+            outlook_enabled = [
+                "stored_oauth_connection",
+                "bounded_preview",
+                "import_selected_to_local_email_records",
+                "outlook_draft_creation",
+            ]
         elif outlook_configured:
             outlook_enabled = ["oauth_authorization"]
         else:
@@ -98,7 +103,6 @@ def get_integrations_status(
             "delta_query_sync",
             "change_notifications",
             "shared_mailbox_selection",
-            "draft_creation",
             "send_mail",
             "attachment_download",
         ],

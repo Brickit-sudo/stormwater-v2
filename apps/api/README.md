@@ -18,7 +18,7 @@ Set `DATABASE_URL` in `.env` for local Postgres:
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 ```
 
-Optional Outlook OAuth + Import Preview settings:
+Optional Outlook OAuth + Import Preview/Draft settings:
 
 ```text
 MICROSOFT_TENANT_ID=<tenant id>
@@ -29,7 +29,7 @@ MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 TOKEN_ENCRYPTION_KEY=<optional strong local token protection key>
 ```
 
-Register the Microsoft app with this redirect URI and delegated scopes `offline_access`, `User.Read`, and `Mail.Read`. These values are optional for normal API startup and tests. If they are missing, only the Outlook auth/import endpoints return a clear configuration error. Do not commit real `.env` secrets.
+Register the Microsoft app with this redirect URI and delegated scopes `offline_access`, `User.Read`, and `Mail.ReadWrite`. `Mail.ReadWrite` is required for creating Outlook Draft messages; `Mail.Send` is not requested. These values are optional for normal API startup and tests. If they are missing, only the Outlook auth/import/draft endpoints return a clear configuration error. Do not commit real `.env` secrets.
 
 Token data is stored only in the API database, never returned to the frontend. Set `TOKEN_ENCRYPTION_KEY` for local token protection; without it, development uses a server-side obfuscation fallback that is not production encryption.
 
@@ -223,6 +223,7 @@ Supported deterministic `source_field` values are `client_id`, `account`, `manag
 - `POST /v1/outlook/auth/disconnect`
 - `POST /v1/outlook/preview`
 - `POST /v1/outlook/import-selected`
+- `POST /v1/outlook/drafts/from-ai-draft`
 - `GET /v1/email-messages`
 - `POST /v1/email-messages`
 - `GET /v1/email-messages/{email_message_id}`
@@ -241,21 +242,24 @@ The `/v1/files` endpoints manage **metadata-only** rows in the `evidence_files` 
 
 The `/v1/reminders` endpoints manage local-only reminders linked to exactly one Client, Site, or Job. This phase does not implement Outlook OAuth, Gmail OAuth, calendar sync, email sending, external calendar event creation, push notifications, or AI follow-up drafting. `DELETE` soft archives a reminder by setting `status=archived` and `archived_at`; normal lists exclude archived records unless `status=archived` is requested.
 
-The Work Hub email endpoints are local-first. `/v1/email-messages` stores seeded, manual, or explicitly imported Outlook message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores review-first draft text linked to Client/Site/Job/Email records. `/v1/ai/*` can generate or suggest structured outputs, but it never sends email, creates Outlook drafts, generates final reports, downloads attachments, or auto-links records. `/v1/email-import-batches` stores local batch metadata.
+The Work Hub email endpoints are local-first. `/v1/email-messages` stores seeded, manual, or explicitly imported Outlook message records, supports paginated search/filtering, and archives by setting `status=archived` and `archived_at`. `/v1/email-record-links` links an email to exactly one Client, Site, or Job and updates the email's direct scope fields. `/v1/ai-drafts` stores review-first draft text linked to Client/Site/Job/Email records. `/v1/outlook/drafts/from-ai-draft` creates an Outlook Draft from a reviewed email-style AI draft, stores provider metadata on that local draft, and never sends. `/v1/ai/*` can generate or suggest structured outputs, but it never sends email, generates final reports, downloads attachments, or auto-links records. `/v1/email-import-batches` stores local batch metadata.
 
-### Outlook OAuth And Import Preview
+### Outlook OAuth, Import Preview, And Draft Push
 
-Outlook import is bounded to explicit Work Hub requests:
+Outlook import and draft push are bounded to explicit Work Hub requests:
 
 - `GET /v1/outlook/status` reports Microsoft Graph env status and never returns secrets.
 - `GET /v1/outlook/auth/status?organization_id=<uuid>` reports configured, connected, expired, disconnected, or error state and never returns tokens.
-- `GET /v1/outlook/auth/start?organization_id=<uuid>` returns the Microsoft authorization URL. It requests only `offline_access`, `User.Read`, and `Mail.Read`.
+- `GET /v1/outlook/auth/start?organization_id=<uuid>` returns the Microsoft authorization URL. It requests only `offline_access`, `User.Read`, and `Mail.ReadWrite`; it never requests `Mail.Send`.
 - `GET /v1/outlook/auth/callback` validates signed state, exchanges the authorization code, reads basic user profile identity, and stores protected token data server-side.
 - `POST /v1/outlook/auth/disconnect` disconnects the active Outlook connection, archives it, and clears stored token values from the active row.
 - `POST /v1/outlook/preview` requires `organization_id`, a request body, configured Microsoft env vars, and either a stored Outlook connection or an advanced request token. It calls Microsoft Graph only for that explicit preview, caps `limit` at 100, and writes nothing locally.
 - `POST /v1/outlook/import-selected` accepts selected preview messages, creates an `email_import_batches` row, creates new `email_messages`, and skips duplicates by `provider_message_id` and `internet_message_id`.
+- `POST /v1/outlook/drafts/from-ai-draft` requires a stored Outlook connection, an email-style AI draft, To recipients, a subject, and usable body text. It posts to Microsoft Graph `/me/messages` to create a draft, saves the provider draft ID/web link/status on `ai_drafts`, and leaves review/send in Outlook.
 
-This phase does not implement background mailbox sync, delta query, polling, Gmail, email sending, Outlook draft creation, attachment downloads, full mailbox import, or OneDrive/SharePoint scanning. Smart Hub AI can run later against local imported email records, not during Outlook import. Tests mock Graph and OAuth exchange and do not require a real Outlook account.
+This phase does not implement background mailbox sync, delta query, polling, Gmail, email sending, automatic Outlook draft creation, attachment downloads, full mailbox import, or OneDrive/SharePoint scanning. Smart Hub AI can run later against local imported email records, not during Outlook import. Tests mock Graph and OAuth exchange and do not require a real Outlook account.
+
+Future Outlook draft work can add push revisions, explicit reviewed send, and sent-state sync.
 
 Filter the reminder list with `status`, `priority`, `client_id`, `site_id`, `job_id`, `due_before`, and `due_after` query params:
 

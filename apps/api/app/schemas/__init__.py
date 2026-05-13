@@ -62,6 +62,10 @@ from app.schemas.outlook_auth import (
     OutlookDisconnectRequest,
     OutlookDisconnectResponse,
 )
+from app.schemas.outlook_draft import (
+    OutlookDraftFromAiDraftRequest,
+    OutlookDraftFromAiDraftResponse,
+)
 from app.schemas.reminder import (
     ReminderBase,
     ReminderCreate,
@@ -130,6 +134,8 @@ __all__ = [
     "OutlookAuthStatusResponse",
     "OutlookDisconnectRequest",
     "OutlookDisconnectResponse",
+    "OutlookDraftFromAiDraftRequest",
+    "OutlookDraftFromAiDraftResponse",
     "OutlookImportSelectedRequest",
     "OutlookImportSelectedResponse",
     "OutlookPreviewMessage",

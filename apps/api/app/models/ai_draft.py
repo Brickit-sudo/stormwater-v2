@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,5 +50,11 @@ class AiDraft(
     prompt_context: Mapped[str | None] = mapped_column(Text)
     draft_text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    provider: Mapped[str | None] = mapped_column(String(64))
+    provider_draft_id: Mapped[str | None] = mapped_column(String(255))
+    provider_web_link: Mapped[str | None] = mapped_column(Text)
+    provider_status: Mapped[str | None] = mapped_column(String(32))
+    pushed_to_provider_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_error: Mapped[str | None] = mapped_column(Text)
 
     email_message: Mapped["EmailMessage | None"] = relationship(back_populates="ai_drafts")

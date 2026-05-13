@@ -72,7 +72,7 @@ def _store_connection(
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_in": expires_in,
-            "scope": "offline_access User.Read Mail.Read",
+            "scope": "offline_access User.Read Mail.ReadWrite",
         },
         profile={
             "mail": "mara.whitcomb@pinetree.example",
@@ -118,7 +118,7 @@ def test_outlook_auth_start_returns_auth_url_when_configured(
     assert "tenant-id" in parsed.path
     assert query["client_id"] == ["client-id"]
     assert query["redirect_uri"] == ["http://localhost:8000/v1/outlook/auth/callback"]
-    assert {"offline_access", "User.Read", "Mail.Read"} <= set(scopes)
+    assert {"offline_access", "User.Read", "Mail.ReadWrite"} <= set(scopes)
     assert "Mail.Send" not in scopes
     assert body["state"]
     assert "client-secret" not in response.text
@@ -158,7 +158,7 @@ def test_outlook_auth_callback_exchanges_mocked_token_and_stores_connection(
             "access_token": "callback-access-token",
             "refresh_token": "callback-refresh-token",
             "expires_in": 3600,
-            "scope": "offline_access User.Read Mail.Read",
+            "scope": "offline_access User.Read Mail.ReadWrite",
         }
 
     monkeypatch.setattr(outlook_auth_service, "_post_token_request", fake_post_token)
@@ -288,7 +288,7 @@ def test_outlook_preview_refreshes_expired_stored_token(
             "access_token": "new-access-token",
             "refresh_token": "new-refresh-token",
             "expires_in": 3600,
-            "scope": "offline_access User.Read Mail.Read",
+            "scope": "offline_access User.Read Mail.ReadWrite",
         }
 
     def fake_graph_messages(**kwargs: object) -> list[dict[str, object]]:

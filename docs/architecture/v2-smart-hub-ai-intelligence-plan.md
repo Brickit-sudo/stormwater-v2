@@ -33,6 +33,7 @@ The implementation is local-first:
   - create local reminders from selected action suggestions.
   - draft replies only when AI is configured.
 - AI Drafts view can generate review-first report section, maintenance recommendation, and client-facing summary drafts when AI is configured.
+- AI Drafts view can push reviewed email-style drafts to Outlook Drafts when Outlook is connected with Microsoft Graph `Mail.ReadWrite`. This creates a draft message only, stores provider draft metadata locally, and leaves review/send in Outlook. `Mail.Send` is not requested.
 
 ## Explicit Non-Goals
 
@@ -42,7 +43,7 @@ The implementation is local-first:
 - No mailbox polling.
 - No import-all mailbox operation.
 - No email sending.
-- No Outlook draft creation.
+- No automatic Outlook draft creation.
 - No attachment download.
 - No Drive, OneDrive, or SharePoint folder scanning.
 - No final report generation.
@@ -61,6 +62,7 @@ The implementation is local-first:
 - `POST /v1/ai/report-section-draft`
 - `POST /v1/ai/maintenance-recommendation-draft`
 - `POST /v1/ai/client-summary-draft`
+- `POST /v1/outlook/drafts/from-ai-draft`
 
 All POST routes require `organization_id`. Email routes may use `email_message_id`; report helpers can use manual `user_context`.
 
@@ -84,7 +86,10 @@ Tests mock provider behavior and never require real OpenAI, Microsoft, or Google
 - Work Hub loads provider status, Outlook connection state, and local email intelligence only under `/work`.
 - Heavy work happens only after explicit user actions.
 - Deterministic link extraction runs against the selected local email and does not call external providers.
+- Outlook draft creation happens only after an explicit Create Outlook Draft click and never calls `sendMail`.
 
 ## Future Recommended Build
 
-After Outlook OAuth is stable, build Push approved AI drafts to Outlook Drafts. Keep it review-first and do not send email automatically.
+Outlook-specific follow-ups are push revisions to an existing draft, explicit reviewed send, and sent-state sync.
+
+After Outlook Draft Push is stable, build CRM Timeline Foundation so imported email, AI draft, Outlook draft, reminder, file, and job events can be scanned from one place.

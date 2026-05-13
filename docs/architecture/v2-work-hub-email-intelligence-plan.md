@@ -20,7 +20,7 @@ It gives Sterling a fast place to review file links, local email records, manual
 
 ## Explicit Non-Goals
 
-This phase does not add Outlook OAuth token storage, Gmail sync, email sending, Outlook draft creation, mailbox scanning, background sync, polling, attachment downloads, Drive folder scanning, final report generation, or photosheet generation.
+This phase did not add Outlook OAuth token storage, Gmail sync, email sending, Outlook draft creation, mailbox scanning, background sync, polling, attachment downloads, Drive folder scanning, final report generation, or photosheet generation. Later V2 phases add stored Outlook OAuth and reviewed Outlook Draft creation without sending.
 
 No visible Work Hub control should imply any of those capabilities.
 
@@ -46,4 +46,4 @@ Recommended shape:
 - Import only selected messages or a bounded result set.
 - Dedupe by `provider_message_id`.
 - Keep attachment metadata separate from attachment downloads.
-- Do not send email or create Outlook drafts from this flow.
+- Do not send email or create Outlook drafts from this email intelligence flow.

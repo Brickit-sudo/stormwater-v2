@@ -106,6 +106,10 @@ Connect Outlook calls `GET /v1/outlook/auth/start` and opens the Microsoft autho
 
 Smart Hub AI requires `OPENAI_API_KEY` for provider-backed draft generation, but deterministic link extraction, action candidates, and exact-match CRM suggestions work without AI configuration.
 
-There is no Gmail sync, no Sync All Mailbox, no sending, no Outlook draft creation, no attachment download, no full mailbox import, no OneDrive/SharePoint scan, no final report generation, and no automatic reminders or auto-linking.
+Reviewed email-style AI drafts can be pushed to Outlook Drafts when Outlook is connected with Microsoft Graph `Mail.ReadWrite`. The Work Hub requires To, Subject, and body review fields, calls the backend only after Create Outlook Draft, saves the Outlook draft metadata on the local AI draft, and leaves review/send in Outlook. It does not expose a Send button and `Mail.Send` is not requested.
+
+There is no Gmail sync, no Sync All Mailbox, no sending, no automatic Outlook draft creation, no attachment download, no full mailbox import, no OneDrive/SharePoint scan, no final report generation, and no automatic reminders or auto-linking.
+
+Future Outlook draft work can add push revisions, explicit reviewed send, and sent-state sync.
 
 Every visible Work Hub action does real work: switch views, refresh provider status, search/filter local emails, preview Outlook emails when configured, import selected preview rows, paginate lists, link an email to a Client/Site/Job, summarize/extract/suggest from local messages, create reminders from selected suggestions, save file metadata links, create/edit/archive drafts, mark drafts reviewed/used, archive email records, and open stored file/link URLs.

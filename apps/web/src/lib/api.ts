@@ -38,6 +38,8 @@ import type {
   OutlookAuthStartResponse,
   OutlookAuthStatus,
   OutlookDisconnectResponse,
+  OutlookDraftFromAiDraftInput,
+  OutlookDraftFromAiDraftResponse,
   OutlookImportSelectedInput,
   OutlookImportSelectedResponse,
   OutlookPreviewInput,
@@ -783,6 +785,15 @@ export function disconnectOutlook(
   return apiRequest<OutlookDisconnectResponse>("/v1/outlook/auth/disconnect", {
     method: "POST",
     body: { organization_id: organizationId },
+  });
+}
+
+export function createOutlookDraftFromAiDraft(
+  input: OutlookDraftFromAiDraftInput,
+): Promise<OutlookDraftFromAiDraftResponse> {
+  return apiRequest<OutlookDraftFromAiDraftResponse>("/v1/outlook/drafts/from-ai-draft", {
+    method: "POST",
+    body: input,
   });
 }
 

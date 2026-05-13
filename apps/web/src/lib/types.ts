@@ -536,6 +536,12 @@ export type AiDraft = {
   prompt_context: string | null;
   draft_text: string;
   status: AiDraftStatus;
+  provider: string | null;
+  provider_draft_id: string | null;
+  provider_web_link: string | null;
+  provider_status: string | null;
+  pushed_to_provider_at: string | null;
+  provider_error: string | null;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -565,6 +571,23 @@ export type AiDraftListOptions = {
   emailMessageId?: UUID;
   limit?: number;
   offset?: number;
+};
+
+export type OutlookDraftFromAiDraftInput = {
+  organization_id: UUID;
+  ai_draft_id: UUID;
+  to_recipients: string[];
+  subject?: string | null;
+  body_override?: string | null;
+};
+
+export type OutlookDraftFromAiDraftResponse = {
+  ai_draft_id: UUID;
+  provider: string;
+  provider_draft_id: string;
+  provider_web_link: string | null;
+  provider_status: string;
+  pushed_to_provider_at: string;
 };
 
 export type AiStatus = {

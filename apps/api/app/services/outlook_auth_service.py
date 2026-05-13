@@ -29,7 +29,7 @@ from app.services.email_messages_service import require_organization
 
 
 OUTLOOK_PROVIDER = "outlook"
-MINIMAL_SCOPES = ("offline_access", "User.Read", "Mail.Read")
+MINIMAL_SCOPES = ("offline_access", "User.Read", "Mail.ReadWrite")
 STATE_TTL_SECONDS = 15 * 60
 TOKEN_REFRESH_SKEW_SECONDS = 60
 AUTHORITY_BASE_URL = "https://login.microsoftonline.com"
@@ -243,6 +243,14 @@ def _latest_connection(db: Session, organization_id: uuid.UUID) -> OutlookConnec
         .order_by(OutlookConnection.connected_at.desc(), OutlookConnection.created_at.desc())
     )
     return db.scalar(statement)
+
+
+def get_latest_connection(
+    db: Session,
+    *,
+    organization_id: uuid.UUID,
+) -> OutlookConnection | None:
+    return _latest_connection(db, organization_id)
 
 
 def _mark_superseded_connections(

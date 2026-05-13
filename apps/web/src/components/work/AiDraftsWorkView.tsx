@@ -5,12 +5,14 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import Badge from "@/components/ui/Badge";
 import {
   archiveAiDraft,
+  createOutlookDraftFromAiDraft,
   createAiDraft,
   generateClientSummaryDraft,
   generateMaintenanceRecommendationDraft,
   generateReportSectionDraft,
   getAiStatus,
   getAiDraft,
+  getIntegrationsStatus,
   listAiDrafts,
   listClients,
   listEmailMessages,
@@ -25,6 +27,7 @@ import type {
   AiStatus,
   Client,
   EmailMessage,
+  IntegrationsStatus,
   Job,
   ReportSectionDraftResponse,
   Site,
@@ -67,8 +70,15 @@ type HelperFormState = {
   system_type: string;
 };
 
+type OutlookDraftFormState = {
+  to: string;
+  subject: string;
+  body: string;
+};
+
 const draftLimit = 25;
 const statusOptions: Array<"" | AiDraftStatus> = ["", "draft", "reviewed", "used"];
+const emailStyleDraftTypes = new Set(["email_reply", "follow_up", "client_email", "client_summary"]);
 
 const emptyForm: DraftFormState = {
   target_type: "none",
@@ -90,9 +100,38 @@ const emptyHelperForm: HelperFormState = {
   system_type: "",
 };
 
+const emptyOutlookForm: OutlookDraftFormState = {
+  to: "",
+  subject: "",
+  body: "",
+};
+
 function optional(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseRecipients(value: string): string[] {
+  return value
+    .split(/[,\n;]/)
+    .map((recipient) => recipient.trim())
+    .filter(Boolean);
+}
+
+function isEmailStyleDraft(draft: AiDraft): boolean {
+  return emailStyleDraftTypes.has(draft.draft_type.trim());
+}
+
+function hasOutlookProviderDraft(draft: AiDraft): boolean {
+  return draft.provider === "outlook" && Boolean(draft.provider_draft_id);
+}
+
+function outlookFormFromDraft(draft: AiDraft): OutlookDraftFormState {
+  return {
+    to: "",
+    subject: draft.title,
+    body: draft.draft_text,
+  };
 }
 
 function statusTone(status: AiDraftStatus): "success" | "warning" | "muted" | "info" {
@@ -124,14 +163,17 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
   const [jobs, setJobs] = useState<Job[]>([]);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [integrationsStatus, setIntegrationsStatus] = useState<IntegrationsStatus | null>(null);
   const [statusFilter, setStatusFilter] = useState<"" | AiDraftStatus>("");
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [form, setForm] = useState<DraftFormState>(emptyForm);
   const [helperForm, setHelperForm] = useState<HelperFormState>(emptyHelperForm);
+  const [outlookForm, setOutlookForm] = useState<OutlookDraftFormState>(emptyOutlookForm);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pushingOutlookDraft, setPushingOutlookDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -250,6 +292,7 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
       setTotal(response.total);
       if (response.items.length === 0) {
         setSelectedDraft(null);
+        setOutlookForm(emptyOutlookForm);
       }
       setSelectedId((current) =>
         current && response.items.some((draft) => draft.id === current)
@@ -273,19 +316,25 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      getAiStatus()
-        .then((status) => {
-          if (!cancelled) setAiStatus(status);
+      Promise.all([getAiStatus(), getIntegrationsStatus(organizationId)])
+        .then(([ai, integrations]) => {
+          if (!cancelled) {
+            setAiStatus(ai);
+            setIntegrationsStatus(integrations);
+          }
         })
         .catch(() => {
-          if (!cancelled) setAiStatus(null);
+          if (!cancelled) {
+            setAiStatus(null);
+            setIntegrationsStatus(null);
+          }
         });
     }, 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -305,6 +354,7 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
         .then((draft) => {
           if (cancelled) return;
           setSelectedDraft(draft);
+          setOutlookForm(outlookFormFromDraft(draft));
         })
         .catch((caught) => {
           if (!cancelled) {
@@ -349,6 +399,7 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
     });
     setFormMode("create");
     setSelectedDraft(null);
+    setOutlookForm(emptyOutlookForm);
     setError(null);
   }
 
@@ -433,6 +484,7 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
       setFormMode(null);
       setSelectedId(saved.id);
       setSelectedDraft(saved);
+      setOutlookForm(outlookFormFromDraft(saved));
       await loadDrafts();
       await loadReferences();
     } catch (caught) {
@@ -536,11 +588,64 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
       await archiveAiDraft(selectedDraft.id, organizationId);
       setSelectedDraft(null);
       setSelectedId(null);
+      setOutlookForm(emptyOutlookForm);
       await loadDrafts();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to archive draft.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createOutlookDraft() {
+    if (!selectedDraft) {
+      return;
+    }
+    const toRecipients = parseRecipients(outlookForm.to);
+    const subject = outlookForm.subject.trim();
+    const body = outlookForm.body.trim();
+    if (toRecipients.length === 0) {
+      setError("Add at least one To recipient.");
+      return;
+    }
+    if (!subject) {
+      setError("Subject is required.");
+      return;
+    }
+    if (!body) {
+      setError("Draft body is required.");
+      return;
+    }
+
+    setPushingOutlookDraft(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await createOutlookDraftFromAiDraft({
+        organization_id: organizationId,
+        ai_draft_id: selectedDraft.id,
+        to_recipients: toRecipients,
+        subject,
+        body_override: body,
+      });
+      const updatedDraft = {
+        ...selectedDraft,
+        provider: response.provider,
+        provider_draft_id: response.provider_draft_id,
+        provider_web_link: response.provider_web_link,
+        provider_status: response.provider_status,
+        pushed_to_provider_at: response.pushed_to_provider_at,
+        provider_error: null,
+      };
+      setSelectedDraft(updatedDraft);
+      setDrafts((current) =>
+        current.map((draft) => (draft.id === updatedDraft.id ? updatedDraft : draft)),
+      );
+      setNotice("Outlook draft created. Review and send it from Outlook.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create Outlook draft.");
+    } finally {
+      setPushingOutlookDraft(false);
     }
   }
 
@@ -550,6 +655,19 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
       : formMode === "edit"
         ? "Edit AI Draft"
         : selectedDraft?.title ?? "Select a draft";
+  const outlookConnected =
+    integrationsStatus?.outlook.configured === true &&
+    integrationsStatus.outlook.status === "connected";
+  const selectedIsEmailStyle = selectedDraft ? isEmailStyleDraft(selectedDraft) : false;
+  const selectedHasOutlookDraft = selectedDraft ? hasOutlookProviderDraft(selectedDraft) : false;
+  const outlookCanSubmit =
+    Boolean(selectedDraft) &&
+    outlookConnected &&
+    selectedIsEmailStyle &&
+    !selectedHasOutlookDraft &&
+    parseRecipients(outlookForm.to).length > 0 &&
+    outlookForm.subject.trim().length > 0 &&
+    outlookForm.body.trim().length > 0;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_480px]">
@@ -730,6 +848,17 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
                 {selectedDraft.draft_text}
               </p>
             </section>
+            {selectedIsEmailStyle ? (
+              <OutlookDraftPanel
+                draft={selectedDraft}
+                connected={outlookConnected}
+                form={outlookForm}
+                setForm={setOutlookForm}
+                canSubmit={outlookCanSubmit}
+                pushing={pushingOutlookDraft}
+                onCreate={() => void createOutlookDraft()}
+              />
+            ) : null}
           </div>
         ) : (
           <p className="text-sm text-text-muted">
@@ -738,6 +867,102 @@ export default function AiDraftsWorkView({ organizationId }: AiDraftsWorkViewPro
         )}
       </WorkPreview>
     </div>
+  );
+}
+
+function OutlookDraftPanel({
+  draft,
+  connected,
+  form,
+  setForm,
+  canSubmit,
+  pushing,
+  onCreate,
+}: {
+  draft: AiDraft;
+  connected: boolean;
+  form: OutlookDraftFormState;
+  setForm: (form: OutlookDraftFormState) => void;
+  canSubmit: boolean;
+  pushing: boolean;
+  onCreate: () => void;
+}) {
+  const alreadyCreated = hasOutlookProviderDraft(draft);
+
+  function update(field: keyof OutlookDraftFormState, value: string) {
+    setForm({ ...form, [field]: value });
+  }
+
+  return (
+    <section className="rounded-lg border border-border-soft bg-panel-2 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-text">Outlook Draft</h3>
+          {alreadyCreated ? (
+            <p className="mt-1 text-xs text-text-muted">
+              Outlook draft created. Recreate/update is not supported yet.
+            </p>
+          ) : connected ? (
+            <p className="mt-1 text-xs text-text-muted">
+              Creates a draft message only. Sending stays in Outlook.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-[color:var(--yellow)]">
+              Connect Outlook first.
+            </p>
+          )}
+        </div>
+        {draft.provider_web_link ? (
+          <a
+            href={draft.provider_web_link}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium text-green underline-offset-4 hover:underline"
+          >
+            Open in Outlook
+          </a>
+        ) : null}
+      </div>
+
+      {connected && !alreadyCreated ? (
+        <div className="mt-4 space-y-3">
+          <FormField label="To">
+            <input
+              value={form.to}
+              onChange={(event) => update("to", event.target.value)}
+              className="form-input"
+              placeholder="client@example.com"
+            />
+          </FormField>
+          <FormField label="Subject">
+            <input
+              value={form.subject}
+              onChange={(event) => update("subject", event.target.value)}
+              className="form-input"
+              maxLength={500}
+            />
+          </FormField>
+          <FormField label="Body">
+            <textarea
+              value={form.body}
+              onChange={(event) => update("body", event.target.value)}
+              className="form-textarea"
+              rows={7}
+            />
+          </FormField>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className={primaryButtonClass}
+              onClick={onCreate}
+              disabled={!canSubmit || pushing}
+            >
+              {pushing ? "Creating..." : "Create Outlook Draft"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

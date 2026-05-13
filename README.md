@@ -50,7 +50,7 @@ Set `apps\api\.env`:
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 ```
 
-Optional Outlook OAuth + Import Preview settings for `/work`:
+Optional Outlook OAuth + Import Preview/Draft settings for `/work`:
 
 ```text
 MICROSOFT_TENANT_ID=<tenant id>
@@ -61,7 +61,7 @@ MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 TOKEN_ENCRYPTION_KEY=<optional strong local token protection key>
 ```
 
-Register the Microsoft app with the same redirect URI and delegated scopes `offline_access`, `User.Read`, and `Mail.Read`. Leave these blank to run the CRM without Outlook import. Real Microsoft secrets belong only in local `.env`, never in git. If `TOKEN_ENCRYPTION_KEY` is blank, tokens stay server-side but use the documented local-dev obfuscation mode.
+Register the Microsoft app with the same redirect URI and delegated scopes `offline_access`, `User.Read`, and `Mail.ReadWrite`. `Mail.ReadWrite` is required to create Outlook Draft messages; `Mail.Send` is not requested. Leave these blank to run the CRM without Outlook import/draft push. Real Microsoft secrets belong only in local `.env`, never in git. If `TOKEN_ENCRYPTION_KEY` is blank, tokens stay server-side but use the documented local-dev obfuscation mode.
 
 Optional AI assistant settings for `/work`:
 
@@ -223,9 +223,9 @@ The `/work` route is the only place Outlook import, provider readiness, and Smar
 
 Outlook import is preview/import-selected only: status reads local env and connection state, Connect Outlook starts Microsoft OAuth, callback stores server-side token data, preview calls Microsoft Graph only after a button click, and import writes only selected preview messages to local `email_messages` with an `email_import_batches` row. A hidden advanced request-token path remains for local development and tests.
 
-Smart Hub AI is review-first. With no `OPENAI_API_KEY`, local deterministic helpers still extract Drive/OneDrive/SharePoint/web links, suggest action items, and suggest exact-match Client/Site/Job links. With `OPENAI_API_KEY`, explicit buttons can save email summaries, reply drafts, report sections, maintenance recommendations, and client-facing summaries as local `ai_drafts`. The app does not send email, create Outlook/Gmail drafts, generate final reports, download attachments, scan Drive/OneDrive folders, or auto-create reminders/links.
+Smart Hub AI is review-first. With no `OPENAI_API_KEY`, local deterministic helpers still extract Drive/OneDrive/SharePoint/web links, suggest action items, and suggest exact-match Client/Site/Job links. With `OPENAI_API_KEY`, explicit buttons can save email summaries, reply drafts, report sections, maintenance recommendations, and client-facing summaries as local `ai_drafts`. Reviewed email-style AI drafts can be pushed to Outlook Drafts when Outlook is connected; the backend creates a draft message only, stores provider draft metadata locally, and never sends email. The user must review and send from Outlook. The app does not create Gmail drafts, generate final reports, download attachments, scan Drive/OneDrive folders, or auto-create reminders/links.
 
-Future phases can add Microsoft Graph delta query/change notifications, Gmail push notifications, Google Drive/OneDrive picker flows, and pushing approved local drafts to Outlook drafts.
+Future phases can add pushing draft revisions, explicit reviewed send, sent-state sync, Microsoft Graph delta query/change notifications, Gmail push notifications, and Google Drive/OneDrive picker flows.
 
 ### Local Scheduling And Reminders
 

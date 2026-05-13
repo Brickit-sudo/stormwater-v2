@@ -41,6 +41,12 @@ class AiDraftRead(AiDraftBase):
 
     id: uuid.UUID
     organization_id: uuid.UUID
+    provider: str | None = None
+    provider_draft_id: str | None = None
+    provider_web_link: str | None = None
+    provider_status: str | None = None
+    pushed_to_provider_at: datetime | None = None
+    provider_error: str | None = None
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None = None

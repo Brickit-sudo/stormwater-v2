@@ -97,7 +97,7 @@ def build_authorization_url(
     *,
     state: str,
     settings: Settings | None = None,
-    scopes: tuple[str, ...] = ("User.Read", "Mail.Read", "offline_access"),
+    scopes: tuple[str, ...] = ("offline_access", "User.Read", "Mail.ReadWrite"),
 ) -> str:
     current = _require_configured(settings)
     tenant_id = current.microsoft_tenant_id or "common"
