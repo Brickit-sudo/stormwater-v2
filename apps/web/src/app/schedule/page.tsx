@@ -10,13 +10,13 @@ import {
   archiveReminder,
   completeReminder,
   createReminder,
-  demoOrganizationId,
   listClients,
   listJobs,
   listReminders,
   listSites,
   updateReminder,
 } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type {
   Client,
   Job,
@@ -193,7 +193,7 @@ function SetupMessage() {
 }
 
 export default function SchedulePage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [sites, setSites] = useState<Site[]>([]);

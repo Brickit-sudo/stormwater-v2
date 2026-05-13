@@ -13,12 +13,12 @@ import SectionHeader from "@/components/ui/SectionHeader";
 import {
   archiveClient,
   createClient,
-  demoOrganizationId,
   getClientJobs,
   getClientSites,
   listClients,
   updateClient,
 } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type { Client, ClientFormInput, Job, Site } from "@/lib/types";
 import {
   dangerButtonClass,
@@ -154,7 +154,7 @@ function LinkedList({
 }
 
 export default function ClientsPage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState("");

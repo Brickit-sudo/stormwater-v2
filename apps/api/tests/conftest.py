@@ -16,6 +16,7 @@ from app.models import Organization
 CRM_TABLE_NAMES = [
     "organizations",
     "users",
+    "organization_memberships",
     "clients",
     "sites",
     "jobs",

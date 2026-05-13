@@ -31,6 +31,18 @@ Optional ports:
 .\scripts\start-v2-demo.ps1 -Seed -ApiPort 8000 -WebPort 3000
 ```
 
+Optional local auth demo:
+
+```powershell
+.\scripts\start-v2-demo.ps1 -Auth
+```
+
+`-Auth` sets ignored local env values, generates a local `JWT_SECRET_KEY` and
+`DEMO_ADMIN_PASSWORD` if they are missing, sets `NEXT_PUBLIC_AUTH_ENABLED=true`,
+and seeds the demo admin user. The generated password is printed only when the
+launcher creates it. Without `-Auth`, the default local demo remains
+auth-disabled and uses `NEXT_PUBLIC_DEMO_ORG_ID`.
+
 The script will:
 
 - Verify it is running inside the `stormwater-v2` repo.
@@ -38,6 +50,8 @@ The script will:
 - Start or create the local `stormwater-v2-postgres` container with safe local defaults.
 - Create missing env files from safe local demo defaults only.
 - Keep existing `apps/api/.env` and `apps/web/.env.local` untouched.
+- Keep auth disabled by default unless `-Auth` is passed or existing local env
+  files already enable it.
 - Run `alembic upgrade head`.
 - Seed demo rows when `-Seed` or `-ResetSeed` is passed.
 - Start API and web dev servers in separate PowerShell windows.
@@ -151,6 +165,19 @@ The default demo organization ID is deterministic:
 ```text
 850c47b8-6d32-58a0-8605-955527cadbf3
 ```
+
+Auth-related local env values:
+
+```text
+AUTH_ENABLED=false
+JWT_SECRET_KEY=
+DEMO_ADMIN_EMAIL=admin@stormwater.local
+DEMO_ADMIN_PASSWORD=
+NEXT_PUBLIC_AUTH_ENABLED=false
+```
+
+For an auth-enabled local demo, use `.\scripts\start-v2-demo.ps1 -Auth` and
+keep the generated values in ignored env files only.
 
 ## Real Data Warning
 

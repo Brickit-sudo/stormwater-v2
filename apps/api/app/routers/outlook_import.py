@@ -6,6 +6,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import (
     OutlookImportSelectedRequest,
@@ -42,7 +43,7 @@ def _raise_http_error(error: Exception) -> None:
 
 
 @router.get("/status", response_model=OutlookStatusResponse)
-def get_outlook_status() -> OutlookStatusResponse:
+def get_outlook_status(current_user: auth.CurrentUserDep) -> OutlookStatusResponse:
     return outlook_import_service.get_outlook_config_status()
 
 
@@ -50,7 +51,9 @@ def get_outlook_status() -> OutlookStatusResponse:
 def preview_outlook_messages(
     payload: OutlookPreviewRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> OutlookPreviewResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         require_organization(db, payload.organization_id)
         return outlook_import_service.preview_outlook_messages(payload, db=db)
@@ -62,7 +65,9 @@ def preview_outlook_messages(
 def import_selected_outlook_messages(
     payload: OutlookImportSelectedRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> OutlookImportSelectedResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return outlook_import_service.import_selected_outlook_messages(db, payload=payload)
     except (CRMNotFoundError, CRMValidationError, httpx.HTTPError) as error:

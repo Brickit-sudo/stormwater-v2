@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
+from app import auth
 from app.db import get_db
 from app.schemas import EmailRecordLinkCreate, EmailRecordLinkListResponse, EmailRecordLinkRead
 from app.services import email_record_links_service
@@ -15,10 +16,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 
 router = APIRouter(prefix="/v1/email-record-links", tags=["email-record-links"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 
@@ -32,7 +30,12 @@ def _raise_http_error(error: Exception) -> None:
 
 
 @router.post("", response_model=EmailRecordLinkRead, status_code=status.HTTP_201_CREATED)
-def create_email_record_link(payload: EmailRecordLinkCreate, db: SessionDep) -> EmailRecordLinkRead:
+def create_email_record_link(
+    payload: EmailRecordLinkCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> EmailRecordLinkRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return email_record_links_service.create_email_record_link(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas.integration_status import IntegrationsStatusResponse
 from app.services import integrations_service
@@ -18,9 +18,7 @@ SessionDep = Annotated[Session, Depends(get_db)]
 @router.get("/status", response_model=IntegrationsStatusResponse)
 def get_integrations_status(
     db: SessionDep,
-    organization_id: Annotated[
-        uuid.UUID | None,
-        Query(description="Optional organization scope for provider connection status."),
-    ] = None,
+    current_user: auth.CurrentUserDep,
+    organization_id: auth.OptionalOrgQueryDep,
 ) -> IntegrationsStatusResponse:
     return integrations_service.get_integrations_status(db=db, organization_id=organization_id)

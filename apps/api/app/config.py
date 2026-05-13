@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     ai_features_enabled: bool | None = Field(default=None, validation_alias="AI_FEATURES_ENABLED")
     google_client_id: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_ID")
     google_api_key: str | None = Field(default=None, validation_alias="GOOGLE_API_KEY")
+    auth_enabled: bool = Field(default=False, validation_alias="AUTH_ENABLED")
+    jwt_secret_key: str | None = Field(default=None, validation_alias="JWT_SECRET_KEY")
+    jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
+    jwt_expires_minutes: int = Field(default=720, validation_alias="JWT_EXPIRES_MINUTES")
+    auth_cookie_name: str = Field(
+        default="stormwater_v2_session",
+        validation_alias="AUTH_COOKIE_NAME",
+    )
+    auth_cookie_secure: bool = Field(default=False, validation_alias="AUTH_COOKIE_SECURE")
+    auth_cookie_samesite: str = Field(default="lax", validation_alias="AUTH_COOKIE_SAMESITE")
+    demo_admin_email: str = Field(
+        default="admin@stormwater.local",
+        validation_alias="DEMO_ADMIN_EMAIL",
+    )
+    demo_admin_password: str | None = Field(default=None, validation_alias="DEMO_ADMIN_PASSWORD")
 
     @property
     def google_drive_picker_enabled(self) -> bool:

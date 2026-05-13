@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import AiDraftCreate, AiDraftListResponse, AiDraftRead, AiDraftUpdate
 from app.services import ai_drafts_service
@@ -14,10 +15,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 
 router = APIRouter(prefix="/v1/ai-drafts", tags=["ai-drafts"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 
@@ -62,7 +60,12 @@ def list_ai_drafts(
 
 
 @router.post("", response_model=AiDraftRead, status_code=status.HTTP_201_CREATED)
-def create_ai_draft(payload: AiDraftCreate, db: SessionDep) -> AiDraftRead:
+def create_ai_draft(
+    payload: AiDraftCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> AiDraftRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_drafts_service.create_ai_draft(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:

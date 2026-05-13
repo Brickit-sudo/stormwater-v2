@@ -6,6 +6,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import OutlookDraftFromAiDraftRequest, OutlookDraftFromAiDraftResponse
 from app.services import outlook_drafts_service
@@ -38,7 +39,9 @@ def _raise_http_error(error: Exception) -> None:
 def create_outlook_draft_from_ai_draft(
     payload: OutlookDraftFromAiDraftRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> OutlookDraftFromAiDraftResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return outlook_drafts_service.create_outlook_draft_from_ai_draft(db, payload=payload)
     except (CRMNotFoundError, CRMValidationError, httpx.HTTPError) as error:

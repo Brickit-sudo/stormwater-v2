@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas.ai_assistant import (
     AiStatusResponse,
@@ -42,12 +43,17 @@ def _raise_http_error(error: Exception) -> None:
 
 
 @router.get("/status", response_model=AiStatusResponse)
-def get_ai_status() -> AiStatusResponse:
+def get_ai_status(current_user: auth.CurrentUserDep) -> AiStatusResponse:
     return ai_assistant_service.get_ai_status()
 
 
 @router.post("/email-summary", response_model=EmailSummaryResponse)
-def summarize_email(payload: EmailSummaryRequest, db: SessionDep) -> EmailSummaryResponse:
+def summarize_email(
+    payload: EmailSummaryRequest,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> EmailSummaryResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.summarize_email(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:
@@ -58,7 +64,9 @@ def summarize_email(payload: EmailSummaryRequest, db: SessionDep) -> EmailSummar
 def extract_email_action_items(
     payload: EmailActionItemsRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> EmailActionItemsResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.extract_email_action_items(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:
@@ -69,7 +77,9 @@ def extract_email_action_items(
 def extract_file_links(
     payload: ExtractFileLinksRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> ExtractFileLinksResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.extract_file_links(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:
@@ -80,7 +90,9 @@ def extract_file_links(
 def suggest_record_links(
     payload: SuggestRecordLinksRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> SuggestRecordLinksResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.suggest_email_record_links(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:
@@ -88,7 +100,12 @@ def suggest_record_links(
 
 
 @router.post("/draft-reply", response_model=DraftReplyResponse)
-def draft_reply(payload: DraftReplyRequest, db: SessionDep) -> DraftReplyResponse:
+def draft_reply(
+    payload: DraftReplyRequest,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> DraftReplyResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.draft_reply(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:
@@ -99,7 +116,9 @@ def draft_reply(payload: DraftReplyRequest, db: SessionDep) -> DraftReplyRespons
 def report_section_draft(
     payload: ReportSectionDraftRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> ReportSectionDraftResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.report_section_draft(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:
@@ -110,7 +129,9 @@ def report_section_draft(
 def maintenance_recommendation_draft(
     payload: MaintenanceRecommendationDraftRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> ReportSectionDraftResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.maintenance_recommendation_draft(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:
@@ -121,7 +142,9 @@ def maintenance_recommendation_draft(
 def client_summary_draft(
     payload: ClientSummaryDraftRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> ReportSectionDraftResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return ai_assistant_service.client_summary_draft(db, payload)
     except (CRMNotFoundError, CRMValidationError, ai_assistant_service.AiProviderError) as error:

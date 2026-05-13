@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import (
     ReminderCreate,
@@ -20,10 +21,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 
 router = APIRouter(prefix="/v1/reminders", tags=["reminders"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 
@@ -70,7 +68,12 @@ def list_reminders(
 
 
 @router.post("", response_model=ReminderRead, status_code=status.HTTP_201_CREATED)
-def create_reminder(payload: ReminderCreate, db: SessionDep) -> ReminderRead:
+def create_reminder(
+    payload: ReminderCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> ReminderRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return reminders_service.create_reminder(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:

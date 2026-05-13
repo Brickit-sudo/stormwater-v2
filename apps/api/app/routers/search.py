@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import SearchResponse
 from app.services import search_service
@@ -14,10 +15,7 @@ from app.services.common import CRMValidationError
 
 router = APIRouter(prefix="/v1/search", tags=["search"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 SearchQuery = Annotated[str, Query(min_length=2)]
 LimitQuery = Annotated[int, Query(ge=1)]
 

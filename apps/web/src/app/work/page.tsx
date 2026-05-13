@@ -2,7 +2,7 @@
 
 import AppShell from "@/components/AppShell";
 import WorkHubShell from "@/components/work/WorkHubShell";
-import { demoOrganizationId } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 
 function SetupMessage() {
   return (
@@ -15,7 +15,7 @@ function SetupMessage() {
 }
 
 export default function WorkPage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
 
   if (!organizationId) {
     return <SetupMessage />;

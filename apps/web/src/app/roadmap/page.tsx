@@ -10,11 +10,11 @@ import {
   archiveProductIdea,
   createProductDecision,
   createProductIdea,
-  demoOrganizationId,
   listProductDecisions,
   listProductIdeas,
   updateProductIdea,
 } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type {
   ProductDecision,
   ProductDecisionInput,
@@ -242,7 +242,7 @@ function SetupMessage() {
 }
 
 export default function RoadmapPage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [ideas, setIdeas] = useState<ProductIdea[]>([]);
   const [decisions, setDecisions] = useState<ProductDecision[]>([]);
   const [filters, setFilters] = useState<IdeaFilters>(emptyFilters);

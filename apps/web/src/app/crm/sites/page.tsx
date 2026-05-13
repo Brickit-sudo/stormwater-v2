@@ -14,12 +14,12 @@ import SectionHeader from "@/components/ui/SectionHeader";
 import {
   archiveSite,
   createSite,
-  demoOrganizationId,
   getSiteJobs,
   listClients,
   listSites,
   updateSite,
 } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type { Client, Job, Site, SiteFormInput } from "@/lib/types";
 import {
   dangerButtonClass,
@@ -134,7 +134,7 @@ function SetupMessage() {
 }
 
 export default function SitesPage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [sites, setSites] = useState<Site[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);

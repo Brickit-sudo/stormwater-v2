@@ -17,13 +17,13 @@ import {
   completeReminder,
   createJob,
   createReminder,
-  demoOrganizationId,
   listClients,
   listJobs,
   listReminders,
   listSites,
   updateJob,
 } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type {
   Client,
   Job,
@@ -230,7 +230,7 @@ function SetupMessage() {
 }
 
 export default function JobsPage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [sites, setSites] = useState<Site[]>([]);

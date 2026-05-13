@@ -25,13 +25,33 @@ Status and stop helpers:
 .\scripts\stop-v2-demo.ps1
 ```
 
-See `..\..\docs\deployment\local-demo.md` and `..\..\docs\deployment\staging-deploy-plan.md`.
+See `..\..\docs\deployment\local-demo.md`,
+`..\..\docs\deployment\staging-deploy-plan.md`, and
+`..\..\docs\deployment\staging-auth-plan.md`.
 
 Set `DATABASE_URL` in `.env` for local Postgres:
 
 ```text
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
 ```
+
+Local demo auth defaults:
+
+```text
+AUTH_ENABLED=false
+JWT_SECRET_KEY=
+JWT_EXPIRES_MINUTES=720
+AUTH_COOKIE_NAME=stormwater_v2_session
+AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_SAMESITE=lax
+DEMO_ADMIN_EMAIL=admin@stormwater.local
+DEMO_ADMIN_PASSWORD=
+```
+
+For protected staging set `AUTH_ENABLED=true`, use a strong
+`JWT_SECRET_KEY`, set `AUTH_COOKIE_SECURE=true` behind HTTPS, and provide
+`DEMO_ADMIN_EMAIL` plus `DEMO_ADMIN_PASSWORD` before running the seed script.
+The seed stores only a bcrypt hash.
 
 Optional Outlook OAuth + Import Preview/Draft settings:
 
@@ -112,14 +132,18 @@ The API runs at `http://localhost:8000`.
 
 Interactive docs are available at `http://localhost:8000/docs`.
 
-## CRM Organization Scope
+## Auth And CRM Organization Scope
 
-Authentication and membership-derived organization scoping are deferred. For now, CRM endpoints require an explicit `organization_id`:
+CRM endpoints still require an explicit `organization_id` for compatibility:
 
 - Create endpoints take `organization_id` in the JSON body.
 - List/get/patch/delete and linked child endpoints take `organization_id` as a query parameter.
 
-Every service query filters by `organization_id`, and normal list/get routes exclude archived records.
+When `AUTH_ENABLED=false`, this is the local demo bridge. When
+`AUTH_ENABLED=true`, `/v1/auth/login` sets an HttpOnly signed session cookie,
+`/v1/auth/me` returns the current user/org membership, and every protected data
+route verifies that the logged-in user belongs to the requested organization.
+Normal list/get routes still exclude archived records.
 
 For local frontend development, create a temporary organization and demo CRM records with:
 
@@ -134,13 +158,16 @@ Copy the printed `NEXT_PUBLIC_DEMO_ORG_ID` value into `apps\web\.env.local`:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_AUTH_ENABLED=false
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 NEXT_PUBLIC_GOOGLE_API_KEY=
 NEXT_PUBLIC_GOOGLE_APP_ID=
 ```
 
-This is only a development bridge until auth and organization scoping are added.
+`NEXT_PUBLIC_DEMO_ORG_ID` is only a development bridge when auth is disabled.
+Protected staging should use `NEXT_PUBLIC_AUTH_ENABLED=true` and leave the demo
+org bridge blank.
 
 ## Tests And Checks
 
@@ -222,6 +249,9 @@ The validator reads CSV files only. It does not open a database connection, writ
 ## Current Endpoints
 
 - `GET /health`
+- `POST /v1/auth/login`
+- `POST /v1/auth/logout`
+- `GET /v1/auth/me`
 - `GET /v1/search`
 - `GET /v1/clients`
 - `POST /v1/clients`

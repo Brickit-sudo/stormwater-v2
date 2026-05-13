@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import JobCreate, JobListResponse, JobRead, JobUpdate, ReportReadinessResponse
 from app.services import jobs_service, report_readiness_service
@@ -14,10 +15,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 
 router = APIRouter(prefix="/v1/jobs", tags=["jobs"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 
@@ -55,7 +53,12 @@ def list_jobs(
 
 
 @router.post("", response_model=JobRead, status_code=status.HTTP_201_CREATED)
-def create_job(payload: JobCreate, db: SessionDep) -> JobRead:
+def create_job(
+    payload: JobCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> JobRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return jobs_service.create_job(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:

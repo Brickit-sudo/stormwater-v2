@@ -44,7 +44,7 @@ Check status or stop the demo:
 .\scripts\stop-v2-demo.ps1
 ```
 
-Local demo details are in [docs/deployment/local-demo.md](docs/deployment/local-demo.md). The 24/7 staging path is in [docs/deployment/staging-deploy-plan.md](docs/deployment/staging-deploy-plan.md).
+Local demo details are in [docs/deployment/local-demo.md](docs/deployment/local-demo.md). The 24/7 staging path is in [docs/deployment/staging-deploy-plan.md](docs/deployment/staging-deploy-plan.md), with auth details in [docs/deployment/staging-auth-plan.md](docs/deployment/staging-auth-plan.md).
 
 Use demo/seed data only unless auth and hosting are configured.
 
@@ -73,7 +73,16 @@ Set `apps\api\.env`:
 
 ```text
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2
+AUTH_ENABLED=false
+JWT_SECRET_KEY=
+DEMO_ADMIN_EMAIL=admin@stormwater.local
+DEMO_ADMIN_PASSWORD=
 ```
+
+Local demo mode keeps `AUTH_ENABLED=false`. For protected staging, set
+`AUTH_ENABLED=true`, provide a strong `JWT_SECRET_KEY`, seed a demo/admin user
+with `DEMO_ADMIN_EMAIL` and `DEMO_ADMIN_PASSWORD`, and use HTTPS with secure
+cookies.
 
 Optional Outlook OAuth + Import Preview/Draft settings for `/work`:
 
@@ -126,6 +135,7 @@ Copy the printed organization id into `apps\web\.env.local`:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_AUTH_ENABLED=false
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 NEXT_PUBLIC_GOOGLE_API_KEY=
@@ -185,13 +195,16 @@ Set:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_AUTH_ENABLED=false
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 NEXT_PUBLIC_GOOGLE_API_KEY=
 NEXT_PUBLIC_GOOGLE_APP_ID=
 ```
 
-`NEXT_PUBLIC_DEMO_ORG_ID` is temporary while auth and membership-derived organization scoping are deferred. The frontend will show a setup message instead of calling the API if this value is missing.
+`NEXT_PUBLIC_DEMO_ORG_ID` is only for auth-disabled local demos. When
+`NEXT_PUBLIC_AUTH_ENABLED=true`, the frontend uses `/v1/auth/me` to get the
+logged-in user's organization and protected pages redirect to `/login`.
 Leave the Google Picker values blank to show the configure state and keep using
 manual Add File Link. If configured, restrict the browser key in Google Cloud.
 Restart `npm run dev` after editing `apps/web/.env.local`.
@@ -254,7 +267,7 @@ API checks:
 .\.venv\Scripts\python scripts\smoke_crm_api.py
 ```
 
-First CRM API routes are available for clients, sites, jobs, files, and reminders under `/v1`. Until auth is added, create requests include `organization_id` in the JSON body, while list/get/patch/delete requests pass `organization_id` as a query parameter.
+First CRM API routes are available for clients, sites, jobs, files, and reminders under `/v1`. Requests still include explicit `organization_id` values for compatibility. When `AUTH_ENABLED=true`, the API verifies that the logged-in user is a member of that organization before returning data or accepting writes.
 
 Optional dev seed data:
 
@@ -263,7 +276,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\seed_dev.py --reset-seed
 ```
 
-The seed script creates one deterministic organization, three clients, five sites, eight jobs, four local reminders, seven file metadata rows, one local email import batch, five local email messages, three AI drafts, 21 product ideas, and eight product decisions, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
+The seed script creates one deterministic organization, a demo admin user/membership, three clients, five sites, eight jobs, four local reminders, seven file metadata rows, one local email import batch, five local email messages, three AI drafts, 21 product ideas, and eight product decisions, then prints the `NEXT_PUBLIC_DEMO_ORG_ID` value to paste into `apps/web/.env.local`. If `AUTH_ENABLED=true`, set `DEMO_ADMIN_PASSWORD` before seeding so the admin user gets a bcrypt password hash. Re-run without `--reset-seed` to update seed rows in place, or with `--reset-seed` to delete only seed demo rows for the demo organization before reseeding.
 
 ### Work Hub And Email Intelligence
 

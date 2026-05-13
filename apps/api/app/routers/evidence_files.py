@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import (
     EvidenceFileCreate,
@@ -19,10 +20,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 
 router = APIRouter(prefix="/v1/files", tags=["files"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 
@@ -63,7 +61,12 @@ def list_files(
 
 
 @router.post("", response_model=EvidenceFileRead, status_code=status.HTTP_201_CREATED)
-def create_file(payload: EvidenceFileCreate, db: SessionDep) -> EvidenceFileRead:
+def create_file(
+    payload: EvidenceFileCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> EvidenceFileRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return evidence_files_service.create_evidence_file(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:

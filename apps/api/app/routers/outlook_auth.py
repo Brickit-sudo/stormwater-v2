@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import (
     OutlookAuthCallbackResponse,
@@ -21,10 +22,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 
 router = APIRouter(prefix="/v1/outlook/auth", tags=["outlook-auth"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 
 
 def _raise_http_error(error: Exception) -> None:
@@ -90,7 +88,9 @@ def handle_outlook_auth_callback(
 def disconnect_outlook(
     payload: OutlookDisconnectRequest,
     db: SessionDep,
+    current_user: auth.CurrentUserDep,
 ) -> OutlookDisconnectResponse:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return outlook_auth_service.disconnect_connection(db, organization_id=payload.organization_id)
     except (CRMNotFoundError, CRMValidationError, httpx.HTTPError) as error:

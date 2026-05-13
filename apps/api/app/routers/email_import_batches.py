@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import (
     EmailImportBatchCreate,
@@ -18,10 +19,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 
 router = APIRouter(prefix="/v1/email-import-batches", tags=["email-import-batches"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 
@@ -58,7 +56,12 @@ def list_import_batches(
 
 
 @router.post("", response_model=EmailImportBatchRead, status_code=status.HTTP_201_CREATED)
-def create_import_batch(payload: EmailImportBatchCreate, db: SessionDep) -> EmailImportBatchRead:
+def create_import_batch(
+    payload: EmailImportBatchCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> EmailImportBatchRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return email_import_batches_service.create_import_batch(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:

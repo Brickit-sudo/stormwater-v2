@@ -5,6 +5,7 @@ from app.config import get_cors_origins, get_settings
 from app.routers import (
     ai_assistant,
     ai_drafts,
+    auth,
     clients,
     email_import_batches,
     email_messages,
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(auth.router)
     app.include_router(clients.router)
     app.include_router(sites.router)
     app.include_router(jobs.router)

@@ -7,6 +7,38 @@ export type ListResponse<T> = {
   offset: number;
 };
 
+export type AuthOrganization = {
+  id: UUID;
+  name: string;
+  role: string;
+};
+
+export type AuthUser = {
+  id: UUID;
+  email: string;
+  full_name: string | null;
+  is_active: boolean;
+  default_organization_id: UUID | null;
+  default_role: string | null;
+  organizations: AuthOrganization[];
+};
+
+export type LoginInput = {
+  email: string;
+  password: string;
+};
+
+export type AuthStatusResponse = {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  user: AuthUser | null;
+};
+
+export type LogoutResponse = {
+  auth_enabled: boolean;
+  authenticated: boolean;
+};
+
 export type Client = {
   id: UUID;
   organization_id: UUID;

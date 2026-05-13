@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.db import get_db
 from app.schemas import (
     ProductDecisionCreate,
@@ -24,10 +25,7 @@ from app.services.common import CRMNotFoundError, CRMValidationError
 ideas_router = APIRouter(prefix="/v1/product-ideas", tags=["product-roadmap"])
 decisions_router = APIRouter(prefix="/v1/product-decisions", tags=["product-roadmap"])
 SessionDep = Annotated[Session, Depends(get_db)]
-OrgQuery = Annotated[
-    uuid.UUID,
-    Query(description="Temporary organization scope until auth is added."),
-]
+OrgQuery = auth.OrgQueryDep
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
 OffsetQuery = Annotated[int, Query(ge=0)]
 
@@ -70,7 +68,12 @@ def list_product_ideas(
 
 
 @ideas_router.post("", response_model=ProductIdeaRead, status_code=status.HTTP_201_CREATED)
-def create_product_idea(payload: ProductIdeaCreate, db: SessionDep) -> ProductIdeaRead:
+def create_product_idea(
+    payload: ProductIdeaCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> ProductIdeaRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return product_service.create_product_idea(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:
@@ -156,7 +159,12 @@ def list_product_decisions(
 
 
 @decisions_router.post("", response_model=ProductDecisionRead, status_code=status.HTTP_201_CREATED)
-def create_product_decision(payload: ProductDecisionCreate, db: SessionDep) -> ProductDecisionRead:
+def create_product_decision(
+    payload: ProductDecisionCreate,
+    db: SessionDep,
+    current_user: auth.CurrentUserDep,
+) -> ProductDecisionRead:
+    auth.require_organization_access(db, current_user, payload.organization_id)
     try:
         return product_service.create_product_decision(db, data=payload.model_dump())
     except (CRMNotFoundError, CRMValidationError) as error:

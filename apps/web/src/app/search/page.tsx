@@ -6,7 +6,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import AppShell from "@/components/AppShell";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import SectionHeader from "@/components/ui/SectionHeader";
-import { demoOrganizationId, globalSearch } from "@/lib/api";
+import { globalSearch } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type { SearchGroup, SearchResponse, SearchResult, SearchType } from "@/lib/types";
 import { cardClass, eyebrowClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 
@@ -79,7 +80,7 @@ function toneForType(type: string): BadgeTone {
 }
 
 export default function SearchPage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [query, setQuery] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<SearchType[]>(allTypeValues);
   const [response, setResponse] = useState<SearchResponse | null>(null);

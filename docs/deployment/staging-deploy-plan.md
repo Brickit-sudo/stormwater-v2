@@ -2,6 +2,8 @@
 
 This document describes the path from local demo to 24/7 hosted staging. It does not authorize real production data, real imports, or production use before auth and access control exist.
 
+For the current login/session details, see [staging-auth-plan.md](staging-auth-plan.md).
+
 ## Local Demo vs 24/7 Hosting
 
 The local demo runs on Bryce's computer:
@@ -83,6 +85,14 @@ MICROSOFT_CLIENT_SECRET=<app client secret>
 MICROSOFT_REDIRECT_URI=https://<staging-api-domain>/v1/outlook/auth/callback
 MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 TOKEN_ENCRYPTION_KEY=<strong secret>
+AUTH_ENABLED=true
+JWT_SECRET_KEY=<strong random secret>
+JWT_EXPIRES_MINUTES=720
+AUTH_COOKIE_NAME=stormwater_v2_session
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAMESITE=none
+DEMO_ADMIN_EMAIL=<initial admin email>
+DEMO_ADMIN_PASSWORD=<temporary seed password, then rotate/remove>
 OPENAI_API_KEY=<optional, only when AI provider calls are approved>
 OPENAI_MODEL=gpt-4.1-mini
 AI_FEATURES_ENABLED=<true/false>
@@ -94,7 +104,8 @@ Frontend service:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=https://<staging-api-domain>
-NEXT_PUBLIC_DEMO_ORG_ID=<temporary demo org id only until auth replaces it>
+NEXT_PUBLIC_AUTH_ENABLED=true
+NEXT_PUBLIC_DEMO_ORG_ID=<blank when auth is enabled>
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=<optional browser-safe picker client id>
 NEXT_PUBLIC_GOOGLE_API_KEY=<optional restricted browser key>
 NEXT_PUBLIC_GOOGLE_APP_ID=<optional Google app id>
@@ -129,15 +140,19 @@ Provider callback URLs must exactly match the values registered with Microsoft/G
 
 ## Auth and Real Data Gate
 
-No real client data should go online until V2 has:
+No real client data should go online unless V2 staging has:
 
-- Login/authentication.
-- Organization membership and role checks.
-- Server-side organization scoping based on the logged-in user.
-- Protected API routes instead of demo `organization_id` trust.
+- `AUTH_ENABLED=true` on the API.
+- `NEXT_PUBLIC_AUTH_ENABLED=true` on the frontend.
+- A strong `JWT_SECRET_KEY` stored only in the host secret manager.
+- Login/authentication verified with `POST /v1/auth/login` and `GET /v1/auth/me`.
+- Organization membership checks verified with a denied cross-org request.
+- HTTPS enabled for both web and API.
+- `AUTH_COOKIE_SECURE=true`; use `AUTH_COOKIE_SAMESITE=none` when web and API are on different sites.
 - Session/token security reviewed for the chosen hosting model.
 
-The current `NEXT_PUBLIC_DEMO_ORG_ID` bridge is acceptable for local seed demos and internal fake-data staging only. It is not access control.
+The current `NEXT_PUBLIC_DEMO_ORG_ID` bridge is acceptable only when auth is
+disabled for local seed demos. It is not access control.
 
 ## Import Readiness Gate
 

@@ -5,6 +5,7 @@ import type {
   AiDraftListOptions,
   AiDraftUpdateInput,
   AiStatus,
+  AuthStatusResponse,
   ClientSummaryDraftInput,
   Client,
   ClientFormInput,
@@ -33,6 +34,8 @@ import type {
   JobFormInput,
   ListOptions,
   ListResponse,
+  LoginInput,
+  LogoutResponse,
   MaintenanceRecommendationDraftInput,
   MapSite,
   MapSiteListOptions,
@@ -155,6 +158,7 @@ async function apiRequest<T>(
 ): Promise<T> {
   const response = await fetch(buildUrl(path, query), {
     cache: "no-store",
+    credentials: "include",
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -168,6 +172,23 @@ async function apiRequest<T>(
   }
 
   return (await response.json()) as T;
+}
+
+export function getCurrentAuth(): Promise<AuthStatusResponse> {
+  return apiRequest<AuthStatusResponse>("/v1/auth/me");
+}
+
+export function loginWithPassword(input: LoginInput): Promise<AuthStatusResponse> {
+  return apiRequest<AuthStatusResponse>("/v1/auth/login", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function logoutCurrentUser(): Promise<LogoutResponse> {
+  return apiRequest<LogoutResponse>("/v1/auth/logout", {
+    method: "POST",
+  });
 }
 
 function orgQuery({

@@ -8,13 +8,13 @@ import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
 import MetricCard from "@/components/ui/MetricCard";
 import {
-  demoOrganizationId,
   getIntegrationsStatus,
   listClients,
   listJobs,
   listReminders,
   listSites,
 } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type {
   IntegrationProviderStatus,
   IntegrationsStatus,
@@ -673,7 +673,7 @@ function DashboardLinkCard({ link }: { link: NavCard }) {
 }
 
 export default function Home() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [data, setData] = useState<DashboardData>(initialDashboardData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -2,6 +2,7 @@
 param(
     [switch]$Seed,
     [switch]$ResetSeed,
+    [switch]$Auth,
     [switch]$NoBrowser,
     [ValidateRange(1, 65535)]
     [int]$ApiPort = 8000,
@@ -218,6 +219,49 @@ function Get-EnvValue {
     return $null
 }
 
+function New-RandomHex {
+    param([int]$ByteCount)
+    $bytes = [byte[]]::new($ByteCount)
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return (($bytes | ForEach-Object { $_.ToString("x2") }) -join "")
+}
+
+function Ensure-LocalAuthEnv {
+    $email = Get-EnvValue -Path $ApiEnvPath -Key "DEMO_ADMIN_EMAIL"
+    if ([string]::IsNullOrWhiteSpace($email)) {
+        $email = "admin@stormwater.local"
+        Set-EnvValue -Path $ApiEnvPath -Key "DEMO_ADMIN_EMAIL" -Value $email
+    }
+
+    $jwtSecret = Get-EnvValue -Path $ApiEnvPath -Key "JWT_SECRET_KEY"
+    $generatedSecret = $false
+    if ([string]::IsNullOrWhiteSpace($jwtSecret)) {
+        $jwtSecret = New-RandomHex -ByteCount 32
+        Set-EnvValue -Path $ApiEnvPath -Key "JWT_SECRET_KEY" -Value $jwtSecret
+        $generatedSecret = $true
+    }
+
+    $password = Get-EnvValue -Path $ApiEnvPath -Key "DEMO_ADMIN_PASSWORD"
+    $generatedPassword = $false
+    if ([string]::IsNullOrWhiteSpace($password)) {
+        $password = "local-" + (New-RandomHex -ByteCount 9)
+        Set-EnvValue -Path $ApiEnvPath -Key "DEMO_ADMIN_PASSWORD" -Value $password
+        $generatedPassword = $true
+    }
+
+    Set-EnvValue -Path $ApiEnvPath -Key "AUTH_ENABLED" -Value "true"
+    Set-EnvValue -Path $ApiEnvPath -Key "AUTH_COOKIE_SECURE" -Value "false"
+    Set-EnvValue -Path $ApiEnvPath -Key "AUTH_COOKIE_SAMESITE" -Value "lax"
+    Set-EnvValue -Path $WebEnvPath -Key "NEXT_PUBLIC_AUTH_ENABLED" -Value "true"
+
+    return [pscustomobject]@{
+        Email = $email
+        Password = $password
+        GeneratedPassword = $generatedPassword
+        GeneratedSecret = $generatedSecret
+    }
+}
+
 function Ensure-ApiEnv {
     if (Test-Path -LiteralPath $ApiEnvPath) {
         Write-Step "Keeping existing API env file: apps\api\.env"
@@ -235,6 +279,15 @@ function Ensure-ApiEnv {
         "",
         "DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/stormwater_v2",
         "CORS_ORIGINS=http://localhost:${WebPort},http://127.0.0.1:${WebPort}",
+        "",
+        "AUTH_ENABLED=false",
+        "JWT_SECRET_KEY=",
+        "JWT_EXPIRES_MINUTES=720",
+        "AUTH_COOKIE_NAME=stormwater_v2_session",
+        "AUTH_COOKIE_SECURE=false",
+        "AUTH_COOKIE_SAMESITE=lax",
+        "DEMO_ADMIN_EMAIL=admin@stormwater.local",
+        "DEMO_ADMIN_PASSWORD=",
         "",
         "MICROSOFT_TENANT_ID=",
         "MICROSOFT_CLIENT_ID=",
@@ -265,6 +318,7 @@ function Ensure-WebEnv {
     Write-Utf8NoBom -Path $WebEnvPath -Lines @(
         "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:${ApiPort}",
         "NEXT_PUBLIC_DEMO_ORG_ID=${DemoOrganizationId}",
+        "NEXT_PUBLIC_AUTH_ENABLED=false",
         "NEXT_PUBLIC_GOOGLE_CLIENT_ID=",
         "NEXT_PUBLIC_GOOGLE_API_KEY=",
         "NEXT_PUBLIC_GOOGLE_APP_ID="
@@ -544,6 +598,11 @@ Ensure-PostgresContainer
 Wait-PostgresReady
 Ensure-ApiEnv
 Ensure-WebEnv
+$authSetup = $null
+if ($Auth) {
+    Write-Step "Enabling local auth for this demo run."
+    $authSetup = Ensure-LocalAuthEnv
+}
 
 $pythonExecutable = Get-PythonExecutable
 
@@ -554,7 +613,7 @@ if ($ResetSeed) {
     Write-Step "Resetting and reseeding deterministic demo data."
     Invoke-Checked $pythonExecutable @("scripts\seed_dev.py", "--reset-seed") $ApiDir
 }
-elseif ($Seed) {
+elseif ($Seed -or $Auth) {
     Write-Step "Seeding deterministic demo data."
     Invoke-Checked $pythonExecutable @("scripts\seed_dev.py") $ApiDir
 }
@@ -598,6 +657,19 @@ Write-Host "  Search:      http://127.0.0.1:${WebPort}/search"
 Write-Host ""
 Write-Host "Logs are under: $RuntimeDir"
 Write-Host "Use demo/seed data only unless auth and hosting are configured."
+if ($authSetup) {
+    Write-Host ""
+    Write-Host "Local auth is enabled for this demo."
+    Write-Host "  Login:       http://127.0.0.1:${WebPort}/login"
+    Write-Host "  Demo email:  $($authSetup.Email)"
+    if ($authSetup.GeneratedPassword) {
+        Write-Host "  Demo password: $($authSetup.Password)"
+        Write-Host "  This password was generated into ignored apps\api\.env."
+    }
+    else {
+        Write-Host "  Demo password: use DEMO_ADMIN_PASSWORD from ignored apps\api\.env"
+    }
+}
 Write-Host ""
 Write-Host "Stop:   .\scripts\stop-v2-demo.ps1"
 Write-Host "Status: .\scripts\status-v2-demo.ps1"

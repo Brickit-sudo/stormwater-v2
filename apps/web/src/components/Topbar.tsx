@@ -4,6 +4,8 @@ import { useState, type FormEvent } from "react";
 
 import { usePathname, useRouter } from "next/navigation";
 
+import { useAuth } from "@/lib/auth";
+
 const titles: Record<string, { title: string; subtitle: string }> = {
   "/search": {
     title: "Search",
@@ -50,6 +52,8 @@ export default function Topbar() {
   const router = useRouter();
   const section = resolveSection(pathname);
   const [searchValue, setSearchValue] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
+  const { authEnabled, user, logout } = useAuth();
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,6 +63,16 @@ export default function Topbar() {
       return;
     }
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+  }
+
+  async function signOut() {
+    setSigningOut(true);
+    try {
+      await logout();
+      router.push("/login");
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -90,6 +104,21 @@ export default function Topbar() {
           <span className="inline-flex items-center rounded-full border border-border-soft bg-panel px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">
             V2 Bootstrap
           </span>
+          {authEnabled && user ? (
+            <div className="hidden items-center gap-2 sm:flex">
+              <span className="max-w-48 truncate text-xs text-text-muted">
+                {user.email}
+              </span>
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                disabled={signingOut}
+                className="h-8 rounded-md border border-border bg-panel px-3 text-xs font-semibold text-text-secondary transition hover:border-[color:var(--green)]/40 hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {signingOut ? "Signing out" : "Sign out"}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </header>

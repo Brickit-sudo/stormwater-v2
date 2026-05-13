@@ -9,10 +9,10 @@ import StatusBadge from "@/components/crm/StatusBadge";
 import Card from "@/components/ui/Card";
 import SectionHeader from "@/components/ui/SectionHeader";
 import {
-  demoOrganizationId,
   listClients,
   listMapSites,
 } from "@/lib/api";
+import { useOrganizationId } from "@/lib/auth";
 import type { Client, MapSite } from "@/lib/types";
 import { secondaryButtonClass } from "@/lib/ui";
 
@@ -116,7 +116,7 @@ function SitePreview({ site }: { site: MapSite | null }) {
 }
 
 export default function MapPage() {
-  const organizationId = demoOrganizationId;
+  const organizationId = useOrganizationId();
   const [sites, setSites] = useState<MapSite[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);

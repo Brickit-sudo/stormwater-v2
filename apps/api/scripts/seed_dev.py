@@ -9,13 +9,15 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
+from app import auth  # noqa: E402
+from app.config import get_settings  # noqa: E402
 from app.db import get_session_factory  # noqa: E402
 from app.models import (  # noqa: E402
     AiDraft,
@@ -26,10 +28,12 @@ from app.models import (  # noqa: E402
     EvidenceFile,
     Job,
     Organization,
+    OrganizationMembership,
     ProductDecision,
     ProductIdea,
     Reminder,
     Site,
+    User,
 )
 
 
@@ -37,6 +41,7 @@ LEGACY_SOURCE = "seed_dev"
 _UUID_NAMESPACE = uuid.UUID("a2e00679-2448-4c18-9a56-072e385be96b")
 DEMO_ORGANIZATION_ID = uuid.uuid5(_UUID_NAMESPACE, f"{LEGACY_SOURCE}:organization:sterling-demo")
 DEMO_ORGANIZATION_NAME = "Sterling Stormwater Demo"
+DEMO_ADMIN_FULL_NAME = "Sterling Demo Admin"
 
 
 def _seed_uuid(legacy_id: str) -> uuid.UUID:
@@ -1208,6 +1213,56 @@ def _ensure_organization(session: Session) -> Organization:
     return organization
 
 
+def _ensure_demo_admin_user(session: Session) -> User:
+    settings = get_settings()
+    email = settings.demo_admin_email.strip().lower()
+    if settings.auth_enabled and not settings.demo_admin_password:
+        raise RuntimeError("DEMO_ADMIN_PASSWORD is required when AUTH_ENABLED=true.")
+
+    user = session.scalar(select(User).where(func.lower(User.email) == email))
+    if user is None:
+        user = User(
+            email=email,
+            full_name=DEMO_ADMIN_FULL_NAME,
+            is_active=True,
+        )
+        session.add(user)
+        session.flush()
+    else:
+        user.email = email
+        user.full_name = user.full_name or DEMO_ADMIN_FULL_NAME
+        user.is_active = True
+        user.archived_at = None
+
+    if settings.demo_admin_password and not auth.verify_password(
+        settings.demo_admin_password,
+        user.password_hash,
+    ):
+        user.password_hash = auth.hash_password(settings.demo_admin_password)
+
+    session.add(user)
+    session.flush()
+
+    membership = session.scalar(
+        select(OrganizationMembership).where(
+            OrganizationMembership.organization_id == DEMO_ORGANIZATION_ID,
+            OrganizationMembership.user_id == user.id,
+        ),
+    )
+    if membership is None:
+        membership = OrganizationMembership(
+            organization_id=DEMO_ORGANIZATION_ID,
+            user_id=user.id,
+            role="admin",
+        )
+        session.add(membership)
+    else:
+        membership.role = "admin"
+        session.add(membership)
+    session.flush()
+    return user
+
+
 def _find_seed_row(
     session: Session,
     model: type[Client] | type[Site] | type[Job] | type[EvidenceFile],
@@ -1690,6 +1745,7 @@ def _upsert_seed_product_decision(
 def seed(session: Session) -> Organization:
     _validate_seed_site_coordinates()
     organization = _ensure_organization(session)
+    _ensure_demo_admin_user(session)
 
     client_by_legacy_id: dict[str, Client] = {}
     for record in SEED_CLIENTS:

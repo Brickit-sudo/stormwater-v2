@@ -23,19 +23,25 @@ Status and stop helpers:
 .\scripts\stop-v2-demo.ps1
 ```
 
-See `..\..\docs\deployment\local-demo.md` and `..\..\docs\deployment\staging-deploy-plan.md`.
+See `..\..\docs\deployment\local-demo.md`,
+`..\..\docs\deployment\staging-deploy-plan.md`, and
+`..\..\docs\deployment\staging-auth-plan.md`.
 
 Set `apps/web/.env.local`:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_AUTH_ENABLED=false
 NEXT_PUBLIC_DEMO_ORG_ID=<printed seed org id>
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 NEXT_PUBLIC_GOOGLE_API_KEY=
 NEXT_PUBLIC_GOOGLE_APP_ID=
 ```
 
-`NEXT_PUBLIC_DEMO_ORG_ID` is temporary. Auth and membership-derived organization scoping are deferred, so the CRM uses this value when calling the `/v1` API. If it is missing, the app shows a setup message instead of making API calls.
+`NEXT_PUBLIC_DEMO_ORG_ID` is used only when `NEXT_PUBLIC_AUTH_ENABLED=false`.
+For protected staging set `NEXT_PUBLIC_AUTH_ENABLED=true`; protected pages call
+`/v1/auth/me`, redirect unauthenticated users to `/login`, and use the
+logged-in user's default organization id.
 The Google Picker values are optional. Leave them blank to show the configure
 state and keep using Add File Link. If configured, restrict the browser API key
 in Google Cloud.
@@ -85,6 +91,7 @@ that the HTML and CSS chunk are both coming from the active frontend server.
 
 Open:
 
+- `http://127.0.0.1:3000/login`
 - `http://127.0.0.1:3000/search`
 - `http://127.0.0.1:3000/roadmap`
 - `http://127.0.0.1:3000/crm/clients`
@@ -96,6 +103,8 @@ Open:
 
 ## CRM Routes
 
+- `/login` signs into auth-enabled staging and relies on the API's HttpOnly
+  session cookie; the frontend never reads a JWT.
 - `/search` searches bounded local V2 CRM records across Clients, Sites, Jobs, evidence file metadata, imported email records, AI drafts, and reminders. It runs only on explicit submit, uses `GET /v1/search`, and does not call Outlook, Gmail, Google Drive, OneDrive, SharePoint, OpenAI, or external provider search.
 - `/roadmap` manages internal product ideas, deferred work, boss feedback, and decisions. It uses local `product_ideas` and `product_decisions` rows, is not client-facing, and should not contain secrets or private client details.
 - `/crm/clients` lists, creates, edits, archives, and shows linked sites/jobs.

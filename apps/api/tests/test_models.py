@@ -139,6 +139,8 @@ def test_core_model_classes_import_cleanly() -> None:
     assert Organization.__tablename__ == "organizations"
     assert OutlookConnection.__tablename__ == "outlook_connections"
     assert User.__tablename__ == "users"
+    assert "password_hash" in User.__table__.columns
+    assert "is_active" in User.__table__.columns
     assert OrganizationMembership.__tablename__ == "organization_memberships"
     assert Client.__tablename__ == "clients"
     assert ClientAlias.__tablename__ == "client_aliases"
