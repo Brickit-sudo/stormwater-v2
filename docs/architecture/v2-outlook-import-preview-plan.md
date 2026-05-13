@@ -1,23 +1,46 @@
-# V2 Outlook Import Preview Plan
+# V2 Outlook OAuth And Import Preview Plan
 
 ## Scope
 
-The Outlook import phase is a bounded Work Hub MVP. It lets an operator check Microsoft Graph configuration, preview a capped set of Outlook messages from an explicit request, and import selected preview rows into local `email_messages`.
+The Outlook phase is a bounded Work Hub MVP. It lets an operator connect Outlook through Microsoft OAuth, preview a capped set of messages from an explicit request, and import selected preview rows into local `email_messages`.
 
 ## Current Behavior
 
 - Outlook entry point: `/work` only.
-- API endpoints:
+- Auth/status API endpoints:
   - `GET /v1/outlook/status`
+  - `GET /v1/outlook/auth/status?organization_id=`
+  - `GET /v1/outlook/auth/start?organization_id=`
+  - `GET /v1/outlook/auth/callback?code=&state=`
+  - `POST /v1/outlook/auth/disconnect`
+- Import API endpoints:
   - `POST /v1/outlook/preview`
   - `POST /v1/outlook/import-selected`
-- Preview inputs: `organization_id`, optional search query, optional folder ID, optional date range, limit default `25` and capped at `100`, and a request-supplied MVP access token.
+- Microsoft OAuth requests only delegated `offline_access`, `User.Read`, and `Mail.Read`.
+- OAuth state is signed and expires quickly. It is stateless for the local MVP; replay protection beyond expiry is deferred.
+- Active connection rows live in `outlook_connections`.
+- Access and refresh token values are stored server-side only and are never returned by API responses.
+- Preview inputs: `organization_id`, optional search query, optional folder ID, optional date range, limit default `25` and capped at `100`.
+- Preview uses the stored Outlook connection token when present. A request-supplied access token remains accepted for local development/tests.
 - Preview writes no local database rows.
-- Import-selected creates an `email_import_batches` row and local `email_messages` rows only for selected preview messages.
+- Import-selected requires an explicit button click, uses the selected preview payload, creates an `email_import_batches` row, and creates local `email_messages` rows only for selected preview messages.
 - Deduplication skips existing messages by Outlook `provider_message_id` and `internet_message_id`.
 - Attachment payloads are metadata-only; attachments are not downloaded.
-- Provider readiness is also surfaced through `GET /v1/integrations/status`.
+- Provider readiness is surfaced through `GET /v1/integrations/status`, with optional `organization_id` for Work Hub connection state.
 - Imported/local messages can be used by the Smart Hub AI assistant after they become local `email_messages`.
+
+## Microsoft App Registration
+
+Register an app in Microsoft Entra ID:
+
+- Redirect URI: `http://localhost:8000/v1/outlook/auth/callback` for local development.
+- Client type: web application.
+- Delegated Graph permissions:
+  - `offline_access`
+  - `User.Read`
+  - `Mail.Read`
+- Do not grant or request `Mail.Send`, calendar scopes, OneDrive, SharePoint, or Files scopes for this MVP.
+- Create a client secret and put it only in `apps/api/.env`.
 
 ## Configuration
 
@@ -27,17 +50,29 @@ Optional API env vars:
 MICROSOFT_TENANT_ID=<tenant id>
 MICROSOFT_CLIENT_ID=<app client id>
 MICROSOFT_CLIENT_SECRET=<app client secret>
-MICROSOFT_REDIRECT_URI=http://localhost:8000/v1/outlook/oauth/callback
+MICROSOFT_REDIRECT_URI=http://localhost:8000/v1/outlook/auth/callback
 MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
+TOKEN_ENCRYPTION_KEY=<optional strong local token protection key>
 ```
 
-These are not required for normal API startup, CRM routes, or tests. Missing values make Outlook preview/import endpoints return a clear configuration error. Status never returns secrets.
+These are not required for normal API startup, CRM routes, or tests. Missing values make Outlook auth/import endpoints return a clear configuration error. Status never returns secrets.
+
+## Token Storage
+
+The token storage service is intentionally backend-only:
+
+- With `TOKEN_ENCRYPTION_KEY` and `cryptography` available, token values are stored with Fernet encryption.
+- With `TOKEN_ENCRYPTION_KEY` but no `cryptography`, token values use the local keyed protection fallback so the abstraction remains ready for stronger production storage.
+- Without `TOKEN_ENCRYPTION_KEY`, local development uses server-side obfuscation. This keeps tokens out of the frontend and localStorage, but it is not production encryption.
+
+Production hardening should use a managed secret store, key rotation, and stricter OAuth state replay protection.
 
 ## Explicit Non-Goals
 
 - No background mailbox sync.
 - No page-load polling.
 - No automatic import.
+- No full mailbox import.
 - No Gmail.
 - No email sending.
 - No Outlook draft creation.
@@ -48,11 +83,11 @@ These are not required for normal API startup, CRM routes, or tests. Missing val
 
 ## Test Strategy
 
-Tests mock Microsoft Graph. They validate status reporting, missing configuration errors, required request fields, limit caps, Graph message normalization, batch creation, message creation, provider ID dedupe, internet message ID dedupe, empty import handling, no attachment download, and no import-time Graph call.
+Tests mock Microsoft OAuth and Graph. They validate disconnected status, missing config, auth URL scopes, callback token storage, token secrecy in responses, disconnect token clearing, stored-token preview, refresh-token preview, limit caps, Graph message normalization, batch creation, message creation, provider ID dedupe, internet message ID dedupe, empty import handling, no attachment download, and no import-time Graph call.
 
 ## Future Phases
 
-1. OAuth UI and token storage.
+1. Push approved local AI drafts to Outlook Drafts.
 2. Delta query for controlled sync windows.
 3. Microsoft Graph change notifications.
-4. Push approved local AI drafts to Outlook drafts.
+4. Shared mailbox selection.

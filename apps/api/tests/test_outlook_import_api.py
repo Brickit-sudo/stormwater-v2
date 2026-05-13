@@ -113,7 +113,7 @@ def test_outlook_status_reports_missing_config_without_secrets(
     assert "client-secret" not in response.text
 
 
-def test_outlook_preview_requires_org_and_request_token(
+def test_outlook_preview_requires_org_and_connection_or_request_token(
     api_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     organization_id: str,
@@ -128,7 +128,7 @@ def test_outlook_preview_requires_org_and_request_token(
 
     assert missing_org.status_code == 422
     assert missing_token.status_code == 400
-    assert "access_token" in missing_token.json()["detail"]
+    assert "Connect Outlook first" in missing_token.json()["detail"]
 
 
 def test_outlook_preview_caps_limit_and_uses_mocked_graph(
@@ -194,6 +194,7 @@ def test_import_selected_creates_batch_and_email_messages(
             "search_query": "Bayside",
             "limit": 25,
             "selected_messages": [_preview_message()],
+            "access_token": "dev-token",
         },
     )
 
@@ -230,6 +231,7 @@ def test_import_selected_skips_duplicate_provider_message_id(
         json={
             "organization_id": organization_id,
             "selected_messages": [_preview_message(internet_message_id="<new@example.com>")],
+            "access_token": "dev-token",
         },
     )
 
@@ -259,6 +261,7 @@ def test_import_selected_skips_duplicate_internet_message_id(
         json={
             "organization_id": organization_id,
             "selected_messages": [_preview_message(provider_message_id="new-provider-id")],
+            "access_token": "dev-token",
         },
     )
 
@@ -278,7 +281,7 @@ def test_import_selected_handles_empty_list(
 
     response = api_client.post(
         "/v1/outlook/import-selected",
-        json={"organization_id": organization_id, "selected_messages": []},
+        json={"organization_id": organization_id, "selected_messages": [], "access_token": "dev-token"},
     )
 
     assert response.status_code == 200, response.text
@@ -305,6 +308,7 @@ def test_import_selected_never_imports_more_than_requested_limit(
                 _preview_message(provider_message_id="limit-2", internet_message_id="<limit-2@example.com>"),
                 _preview_message(provider_message_id="limit-3", internet_message_id="<limit-3@example.com>"),
             ],
+            "access_token": "dev-token",
         },
     )
 
@@ -332,6 +336,7 @@ def test_import_selected_does_not_download_attachments_or_call_graph(
         json={
             "organization_id": organization_id,
             "selected_messages": [_preview_message(has_attachments=True)],
+            "access_token": "dev-token",
         },
     )
 

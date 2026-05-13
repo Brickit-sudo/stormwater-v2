@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import uuid
+
+from sqlalchemy.orm import Session
+
 from app.config import Settings, get_settings
 from app.schemas.integration_status import IntegrationProviderStatus, IntegrationsStatusResponse
-from app.services import outlook_import_service
+from app.services import outlook_auth_service, outlook_import_service
 
 
 def _present(value: str | None) -> bool:
@@ -53,22 +57,44 @@ def get_ai_config_status(settings: Settings | None = None) -> IntegrationProvide
     )
 
 
-def get_integrations_status(settings: Settings | None = None) -> IntegrationsStatusResponse:
+def get_integrations_status(
+    settings: Settings | None = None,
+    *,
+    db: Session | None = None,
+    organization_id: uuid.UUID | None = None,
+) -> IntegrationsStatusResponse:
     current = settings or get_settings()
-    outlook = outlook_import_service.get_outlook_config_status(current)
+    if db is not None and organization_id is not None:
+        outlook_auth = outlook_auth_service.get_outlook_connection_status(
+            db,
+            organization_id=organization_id,
+            settings=current,
+        )
+        outlook_configured = outlook_auth.configured
+        outlook_missing = outlook_auth.missing_fields
+        outlook_status_value = outlook_auth.connection_status if outlook_configured else "missing"
+        outlook_message = outlook_auth.message
+        if outlook_auth.connection_status in {"connected", "expired"}:
+            outlook_enabled = ["stored_oauth_connection", "bounded_preview", "import_selected_to_local_email_records"]
+        elif outlook_configured:
+            outlook_enabled = ["oauth_authorization"]
+        else:
+            outlook_enabled = []
+    else:
+        outlook = outlook_import_service.get_outlook_config_status(current)
+        outlook_configured = outlook.configured
+        outlook_missing = outlook.missing_fields
+        outlook_status_value = "configured" if outlook.configured else "missing"
+        outlook_message = outlook.message
+        outlook_enabled = ["oauth_authorization"] if outlook.configured else []
     outlook_status = IntegrationProviderStatus(
         provider="outlook",
         label="Outlook",
-        configured=outlook.configured,
-        status="configured" if outlook.configured else "missing",
-        missing_fields=outlook.missing_fields,
-        enabled_capabilities=(
-            ["bounded_preview", "import_selected_to_local_email_records"]
-            if outlook.configured
-            else []
-        ),
+        configured=outlook_configured,
+        status=outlook_status_value,
+        missing_fields=outlook_missing,
+        enabled_capabilities=outlook_enabled,
         deferred_capabilities=[
-            "oauth_token_storage",
             "delta_query_sync",
             "change_notifications",
             "shared_mailbox_selection",
@@ -76,7 +102,7 @@ def get_integrations_status(settings: Settings | None = None) -> IntegrationsSta
             "send_mail",
             "attachment_download",
         ],
-        message=outlook.message,
+        message=outlook_message,
     )
 
     return IntegrationsStatusResponse(

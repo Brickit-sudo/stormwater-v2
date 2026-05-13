@@ -15,7 +15,7 @@ class OutlookStatusResponse(BaseModel):
     configured_fields: list[str]
     missing_fields: list[str]
     graph_base_url: str
-    auth_mode: str = "request_access_token"
+    auth_mode: str = "stored_oauth_or_request_token"
     message: str
 
 
@@ -63,6 +63,7 @@ class OutlookImportSelectedRequest(BaseModel):
     date_to: datetime | None = None
     limit: int = Field(default=25, ge=1)
     selected_messages: list[OutlookPreviewMessage] = Field(default_factory=list)
+    access_token: str | None = Field(default=None, min_length=1)
 
 
 class OutlookImportSelectedResponse(BaseModel):

@@ -77,7 +77,7 @@ def get_outlook_config_status(settings: Settings | None = None) -> OutlookStatus
         missing_fields=missing,
         graph_base_url=current.microsoft_graph_base_url.rstrip("/"),
         message=(
-            "Microsoft Graph environment is configured. Preview still requires a request access token."
+            "Microsoft Graph environment is configured. Use stored Outlook OAuth or a request access token for preview."
             if configured
             else "Microsoft Graph is not configured. Set the missing MICROSOFT_* env vars before previewing Outlook mail."
         ),
@@ -258,13 +258,41 @@ def _graph_get_messages(
     return [item for item in value if isinstance(item, dict)]
 
 
-def preview_outlook_messages(payload: OutlookPreviewRequest) -> OutlookPreviewResponse:
+def _resolve_access_token(
+    db: Session | None,
+    *,
+    organization_id: uuid.UUID,
+    request_access_token: str | None,
+    settings: Settings | None = None,
+) -> str:
+    access_token = _normalize_optional(request_access_token)
+    if access_token is not None:
+        return access_token
+
+    if db is None:
+        raise CRMValidationError("Connect Outlook first.")
+
+    from app.services import outlook_auth_service
+
+    return outlook_auth_service.get_valid_access_token(
+        db,
+        organization_id=organization_id,
+        settings=settings,
+    )
+
+
+def preview_outlook_messages(
+    payload: OutlookPreviewRequest,
+    *,
+    db: Session | None = None,
+) -> OutlookPreviewResponse:
     settings = _require_configured()
-    access_token = _normalize_optional(payload.access_token)
-    if access_token is None:
-        raise CRMValidationError(
-            "Outlook preview requires an access_token in this MVP. OAuth token storage is not implemented yet.",
-        )
+    access_token = _resolve_access_token(
+        db,
+        organization_id=payload.organization_id,
+        request_access_token=payload.access_token,
+        settings=settings,
+    )
 
     limit, capped = _cap_limit(payload.limit)
     raw_messages = _graph_get_messages(
@@ -376,7 +404,13 @@ def import_selected_outlook_messages(
     payload: OutlookImportSelectedRequest,
 ) -> OutlookImportSelectedResponse:
     require_organization(db, payload.organization_id)
-    _require_configured()
+    settings = _require_configured()
+    _resolve_access_token(
+        db,
+        organization_id=payload.organization_id,
+        request_access_token=payload.access_token,
+        settings=settings,
+    )
 
     limit, capped = _cap_limit(payload.limit)
     selected = payload.selected_messages[:limit]

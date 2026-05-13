@@ -411,6 +411,44 @@ export type OutlookStatus = {
   message: string;
 };
 
+export type OutlookConnectionStatus =
+  | "connected"
+  | "expired"
+  | "disconnected"
+  | "error"
+  | string;
+
+export type OutlookAuthStatus = {
+  configured: boolean;
+  configured_fields: string[];
+  missing_fields: string[];
+  graph_base_url: string;
+  auth_mode: string;
+  connection_status: OutlookConnectionStatus;
+  connected: boolean;
+  email_address: string | null;
+  display_name: string | null;
+  scopes: string[];
+  expires_at: string | null;
+  connected_at: string | null;
+  last_used_at: string | null;
+  token_storage_mode: string;
+  message: string;
+};
+
+export type OutlookAuthStartResponse = {
+  configured: boolean;
+  auth_url: string;
+  state: string;
+  message: string;
+};
+
+export type OutlookDisconnectResponse = {
+  disconnected: boolean;
+  connection_status: OutlookConnectionStatus;
+  message: string;
+};
+
 export type IntegrationProviderStatus = {
   provider: string;
   label: string;
@@ -471,6 +509,7 @@ export type OutlookImportSelectedInput = {
   date_to?: string | null;
   limit?: number;
   selected_messages: OutlookPreviewMessage[];
+  access_token?: string | null;
 };
 
 export type OutlookImportSelectedResponse = {

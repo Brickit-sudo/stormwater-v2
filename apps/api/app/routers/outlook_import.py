@@ -53,7 +53,7 @@ def preview_outlook_messages(
 ) -> OutlookPreviewResponse:
     try:
         require_organization(db, payload.organization_id)
-        return outlook_import_service.preview_outlook_messages(payload)
+        return outlook_import_service.preview_outlook_messages(payload, db=db)
     except (CRMNotFoundError, CRMValidationError, httpx.HTTPError) as error:
         _raise_http_error(error)
 

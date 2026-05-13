@@ -13,6 +13,7 @@ from app.routers import (
     health,
     integrations,
     jobs,
+    outlook_auth,
     outlook_import,
     reminders,
     sites,
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(integrations.router)
     app.include_router(ai_assistant.router)
+    app.include_router(outlook_auth.router)
     app.include_router(outlook_import.router)
     app.include_router(reminders.router)
     app.include_router(evidence_files.router)

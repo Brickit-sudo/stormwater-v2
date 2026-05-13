@@ -29,7 +29,7 @@ export default function WorkHubShell({ organizationId }: WorkHubShellProps) {
         description="Local emails, files, provider readiness, review-first AI drafts, and import history for stormwater operations."
       />
 
-      <ProviderReadinessPanel />
+      <ProviderReadinessPanel organizationId={organizationId} />
 
       <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
         <div className="xl:sticky xl:top-20 xl:self-start">

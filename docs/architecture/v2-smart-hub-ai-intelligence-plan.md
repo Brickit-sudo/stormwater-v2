@@ -16,7 +16,7 @@ The implementation is local-first:
 ## What Is Real Now
 
 - `/work` shows provider readiness cards for Outlook, Gmail, Google Drive, OneDrive, and AI.
-- Outlook status reflects Microsoft Graph env readiness. Existing Outlook preview/import-selected remains bounded and config-gated.
+- Outlook status reflects Microsoft Graph env readiness and Work Hub connection state. Outlook OAuth stores server-side token data, and preview/import-selected remains bounded, explicit, and config-gated.
 - Gmail is marked deferred. Future sync should use push notifications, not polling.
 - Google Drive and OneDrive are marked deferred for picker/OAuth paths.
 - AI provider calls are config-gated behind `OPENAI_API_KEY`.
@@ -37,6 +37,7 @@ The implementation is local-first:
 ## Explicit Non-Goals
 
 - No full Outlook sync.
+- No automatic Outlook import.
 - No Gmail sync.
 - No mailbox polling.
 - No import-all mailbox operation.
@@ -80,10 +81,10 @@ Tests mock provider behavior and never require real OpenAI, Microsoft, or Google
 ## Speed Boundaries
 
 - No email, AI, or provider data loads from CRM pages.
-- Work Hub loads provider status and local email intelligence only under `/work`.
+- Work Hub loads provider status, Outlook connection state, and local email intelligence only under `/work`.
 - Heavy work happens only after explicit user actions.
 - Deterministic link extraction runs against the selected local email and does not call external providers.
 
 ## Future Recommended Build
 
-If this Smart Hub pass is stable, build Outlook OAuth UI/token storage next. That unlocks a safer Microsoft Graph path while preserving the current preview/import-selected boundary.
+After Outlook OAuth is stable, build Push approved AI drafts to Outlook Drafts. Keep it review-first and do not send email automatically.

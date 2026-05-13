@@ -20,6 +20,7 @@ class Settings(BaseSettings):
         default="https://graph.microsoft.com/v1.0",
         validation_alias="MICROSOFT_GRAPH_BASE_URL",
     )
+    token_encryption_key: str | None = Field(default=None, validation_alias="TOKEN_ENCRYPTION_KEY")
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_MODEL")
     ai_features_enabled: bool | None = Field(default=None, validation_alias="AI_FEATURES_ENABLED")

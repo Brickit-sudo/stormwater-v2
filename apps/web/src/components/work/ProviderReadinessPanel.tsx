@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Badge from "@/components/ui/Badge";
 import type { BadgeTone } from "@/components/ui/Badge";
 import { getIntegrationsStatus } from "@/lib/api";
-import type { IntegrationProviderStatus, IntegrationsStatus } from "@/lib/types";
+import type { IntegrationProviderStatus, IntegrationsStatus, UUID } from "@/lib/types";
 import { secondaryButtonClass } from "@/lib/ui";
 
 const providerOrder: Array<keyof IntegrationsStatus> = [
@@ -17,18 +17,29 @@ const providerOrder: Array<keyof IntegrationsStatus> = [
 ];
 
 function toneForStatus(status: IntegrationProviderStatus): BadgeTone {
+  if (status.provider === "outlook" && status.status === "expired") return "warning";
+  if (status.provider === "outlook" && status.status === "connected") return "success";
+  if (status.provider === "outlook" && status.status === "disconnected") return "warning";
+  if (status.provider === "outlook" && status.status === "error") return "danger";
   if (status.configured) return "success";
   if (status.status === "deferred") return "muted";
   return "warning";
 }
 
 function statusLabel(status: IntegrationProviderStatus): string {
+  if (status.provider === "outlook" && status.status === "connected") return "Connected";
+  if (status.provider === "outlook" && status.status === "expired") return "Expired";
+  if (status.provider === "outlook" && status.status === "disconnected") return "Disconnected";
   if (status.configured) return "Configured";
   if (status.status === "deferred") return "Configure later";
   return "Configure first";
 }
 
-export default function ProviderReadinessPanel() {
+export default function ProviderReadinessPanel({
+  organizationId,
+}: {
+  organizationId: UUID;
+}) {
   const [status, setStatus] = useState<IntegrationsStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,13 +53,13 @@ export default function ProviderReadinessPanel() {
     setLoading(true);
     setError(null);
     try {
-      setStatus(await getIntegrationsStatus());
+      setStatus(await getIntegrationsStatus(organizationId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load integration status.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

@@ -55,6 +55,13 @@ from app.schemas.outlook_import import (
     OutlookPreviewResponse,
     OutlookStatusResponse,
 )
+from app.schemas.outlook_auth import (
+    OutlookAuthCallbackResponse,
+    OutlookAuthStartResponse,
+    OutlookAuthStatusResponse,
+    OutlookDisconnectRequest,
+    OutlookDisconnectResponse,
+)
 from app.schemas.reminder import (
     ReminderBase,
     ReminderCreate,
@@ -118,6 +125,11 @@ __all__ = [
     "JobRead",
     "JobUpdate",
     "MaintenanceRecommendationDraftRequest",
+    "OutlookAuthCallbackResponse",
+    "OutlookAuthStartResponse",
+    "OutlookAuthStatusResponse",
+    "OutlookDisconnectRequest",
+    "OutlookDisconnectResponse",
     "OutlookImportSelectedRequest",
     "OutlookImportSelectedResponse",
     "OutlookPreviewMessage",

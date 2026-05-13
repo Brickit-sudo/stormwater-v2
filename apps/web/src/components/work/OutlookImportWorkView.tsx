@@ -3,18 +3,21 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import Badge from "@/components/ui/Badge";
+import type { BadgeTone } from "@/components/ui/Badge";
 import {
-  getOutlookStatus,
+  disconnectOutlook,
+  getOutlookAuthStatus,
   importSelectedOutlookMessages,
   previewOutlookMessages,
+  startOutlookAuth,
 } from "@/lib/api";
 import type {
+  OutlookAuthStatus,
   OutlookImportSelectedResponse,
   OutlookPreviewMessage,
-  OutlookStatus,
   UUID,
 } from "@/lib/types";
-import { primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
+import { dangerButtonClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 
 type OutlookImportWorkViewProps = {
   organizationId: UUID;
@@ -73,17 +76,38 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
+function toneForConnection(status: OutlookAuthStatus | null): BadgeTone {
+  if (!status) return "muted";
+  if (!status.configured) return "warning";
+  if (status.connection_status === "connected") return "success";
+  if (status.connection_status === "expired") return "warning";
+  if (status.connection_status === "error") return "danger";
+  return "muted";
+}
+
+function labelForConnection(status: OutlookAuthStatus | null): string {
+  if (!status) return "checking";
+  if (!status.configured) return "not configured";
+  if (status.connection_status === "connected") return "connected";
+  if (status.connection_status === "expired") return "expired";
+  if (status.connection_status === "error") return "error";
+  return "disconnected";
+}
+
 export default function OutlookImportWorkView({
   organizationId,
 }: OutlookImportWorkViewProps) {
-  const [status, setStatus] = useState<OutlookStatus | null>(null);
+  const [status, setStatus] = useState<OutlookAuthStatus | null>(null);
   const [form, setForm] = useState<PreviewForm>(defaultForm);
+  const [showDevToken, setShowDevToken] = useState(false);
   const [previewItems, setPreviewItems] = useState<OutlookPreviewMessage[]>([]);
   const [hasPreviewed, setHasPreviewed] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [importResult, setImportResult] =
     useState<OutlookImportSelectedResponse | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,18 +120,24 @@ export default function OutlookImportWorkView({
     [previewItems, selectedIds],
   );
   const outlookConfigured = Boolean(status?.configured);
+  const hasStoredToken =
+    status?.connection_status === "connected" ||
+    status?.connection_status === "expired";
+  const requestToken = showDevToken ? optional(form.accessToken) : null;
+  const hasRequestToken = Boolean(requestToken);
+  const canPreview = outlookConfigured && (hasStoredToken || hasRequestToken);
 
   const loadStatus = useCallback(async () => {
     setLoadingStatus(true);
     setError(null);
     try {
-      setStatus(await getOutlookStatus());
+      setStatus(await getOutlookAuthStatus(organizationId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to load Outlook status.");
     } finally {
       setLoadingStatus(false);
     }
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -132,6 +162,36 @@ export default function OutlookImportWorkView({
     });
   }
 
+  async function connectOutlook() {
+    setConnecting(true);
+    setError(null);
+    try {
+      const response = await startOutlookAuth(organizationId);
+      window.location.assign(response.auth_url);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to start Outlook authorization.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function runDisconnect() {
+    setDisconnecting(true);
+    setError(null);
+    try {
+      await disconnectOutlook(organizationId);
+      setPreviewItems([]);
+      setSelectedIds(new Set());
+      setImportResult(null);
+      setHasPreviewed(false);
+      await loadStatus();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to disconnect Outlook.");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   async function runPreview() {
     setPreviewing(true);
     setError(null);
@@ -144,7 +204,7 @@ export default function OutlookImportWorkView({
         date_from: dateStart(form.dateFrom),
         date_to: dateEnd(form.dateTo),
         limit: parseLimit(form.limit),
-        access_token: optional(form.accessToken),
+        access_token: requestToken,
       });
       setPreviewItems(response.items);
       setSelectedIds(new Set());
@@ -173,6 +233,7 @@ export default function OutlookImportWorkView({
         date_to: dateEnd(form.dateTo),
         limit: parseLimit(form.limit),
         selected_messages: selectedMessages,
+        access_token: requestToken,
       });
       setImportResult(response);
       setSelectedIds(new Set());
@@ -189,6 +250,10 @@ export default function OutlookImportWorkView({
         <StatusPanel
           status={status}
           loading={loadingStatus}
+          connecting={connecting}
+          disconnecting={disconnecting}
+          onConnect={() => void connectOutlook()}
+          onDisconnect={() => void runDisconnect()}
         />
 
         <section className="rounded-lg border border-border bg-panel p-4">
@@ -235,24 +300,37 @@ export default function OutlookImportWorkView({
                 className="form-input"
               />
             </FormField>
-            <FormField label="Access Token">
-              <input
-                type="password"
-                value={form.accessToken}
-                onChange={(event) => updateForm("accessToken", event.target.value)}
-                className="form-input"
-                placeholder="Request token for preview MVP"
-                autoComplete="off"
-              />
-            </FormField>
           </div>
+          <div className="mt-3">
+            <button
+              type="button"
+              className={secondaryButtonClass}
+              onClick={() => setShowDevToken((current) => !current)}
+            >
+              {showDevToken ? "Hide Request Token" : "Advanced Request Token"}
+            </button>
+          </div>
+          {showDevToken ? (
+            <div className="mt-3 max-w-xl">
+              <FormField label="Request Token">
+                <input
+                  type="password"
+                  value={form.accessToken}
+                  onChange={(event) => updateForm("accessToken", event.target.value)}
+                  className="form-input"
+                  placeholder="Optional developer token"
+                  autoComplete="off"
+                />
+              </FormField>
+            </div>
+          ) : null}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             {hasPreviewed ? (
               <button
                 type="button"
                 className={secondaryButtonClass}
                 onClick={() => void runPreview()}
-                disabled={previewing || importing || !outlookConfigured}
+                disabled={previewing || importing || !canPreview}
               >
                 Refresh Preview
               </button>
@@ -261,14 +339,16 @@ export default function OutlookImportWorkView({
               type="button"
               className={primaryButtonClass}
               onClick={() => void runPreview()}
-              disabled={previewing || importing || !outlookConfigured}
-              title={outlookConfigured ? "Preview bounded Outlook emails" : "Configure first"}
+              disabled={previewing || importing || !canPreview}
+              title={canPreview ? "Preview bounded Outlook emails" : "Connect Outlook first"}
             >
-              {outlookConfigured
+              {canPreview
                 ? previewing
                   ? "Previewing..."
                   : "Preview Outlook Emails"
-                : "Configure first"}
+                : outlookConfigured
+                  ? "Connect Outlook first"
+                  : "Configure first"}
             </button>
           </div>
         </section>
@@ -292,7 +372,7 @@ export default function OutlookImportWorkView({
                 type="button"
                 className={primaryButtonClass}
                 onClick={() => void importSelected()}
-                disabled={previewing || importing}
+                disabled={previewing || importing || !canPreview}
               >
                 {importing ? "Importing..." : "Import Selected Emails"}
               </button>
@@ -413,12 +493,25 @@ export default function OutlookImportWorkView({
 function StatusPanel({
   status,
   loading,
+  connecting,
+  disconnecting,
+  onConnect,
+  onDisconnect,
 }: {
-  status: OutlookStatus | null;
+  status: OutlookAuthStatus | null;
   loading: boolean;
+  connecting: boolean;
+  disconnecting: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
 }) {
   const configured = Boolean(status?.configured);
   const checking = loading || !status;
+  const connectionLabel = labelForConnection(status);
+  const connectedLike =
+    status?.connection_status === "connected" ||
+    status?.connection_status === "expired" ||
+    status?.connection_status === "error";
   return (
     <section className="rounded-lg border border-border bg-panel p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -428,15 +521,35 @@ function StatusPanel({
             {checking ? (
               <Badge tone="muted">checking</Badge>
             ) : (
-              <Badge tone={configured ? "success" : "warning"}>
-                {configured ? "configured" : "not configured"}
-              </Badge>
+              <Badge tone={toneForConnection(status)}>{connectionLabel}</Badge>
             )}
           </div>
           {status ? (
             <p className="mt-2 break-words text-sm text-text-secondary">
               {status.message}
             </p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {status && configured && !connectedLike ? (
+            <button
+              type="button"
+              className={primaryButtonClass}
+              onClick={onConnect}
+              disabled={connecting || disconnecting}
+            >
+              {connecting ? "Connecting..." : "Connect Outlook"}
+            </button>
+          ) : null}
+          {status && configured && connectedLike ? (
+            <button
+              type="button"
+              className={dangerButtonClass}
+              onClick={onDisconnect}
+              disabled={connecting || disconnecting}
+            >
+              {disconnecting ? "Disconnecting..." : "Disconnect Outlook"}
+            </button>
           ) : null}
         </div>
       </div>
@@ -449,6 +562,8 @@ function StatusPanel({
         <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
           <Meta label="Graph URL" value={status.graph_base_url} />
           <Meta label="Auth Mode" value={status.auth_mode} />
+          <Meta label="Account" value={status.email_address ?? "Not connected"} />
+          <Meta label="Token Storage" value={status.token_storage_mode} />
         </div>
       ) : null}
     </section>

@@ -74,7 +74,7 @@ Open:
 - `/crm/jobs` lists, creates, edits, archives, and updates job status.
 - `/schedule` lists local reminders grouped by Overdue, Today, Upcoming, and Completed; it supports New, Edit, Mark Complete, Archive, status filtering, and priority filtering.
 - `/map` shows non-archived sites with stored coordinates on a lazy-loaded Leaflet map, supports real status/client filters, manual Refresh Map, marker selection, and an Open Sites link.
-- `/work` shows Files, Emails, Outlook Import, AI Drafts, Import Batches, and provider readiness. Emails are local records with paginated search/filtering, selected-message preview, deterministic link/action/record suggestions, reviewed reminder creation, reviewed file-link saving, and config-gated AI drafting. Outlook Import is explicit preview/import-selected only. Import Batches show local metadata from seed and imports.
+- `/work` shows Files, Emails, Outlook Import, AI Drafts, Import Batches, and provider readiness. Emails are local records with paginated search/filtering, selected-message preview, deterministic link/action/record suggestions, reviewed reminder creation, reviewed file-link saving, and config-gated AI drafting. Outlook Import has real Connect, Disconnect, explicit preview, and import-selected actions only. Import Batches show local metadata from seed and imports.
 
 The Jobs detail panel also shows a compact reminders section for the selected job. It can add a reminder for that job, mark job reminders complete, and archive them. Editing reminders stays on `/schedule`.
 
@@ -100,10 +100,12 @@ This phase is metadata-only. There is no binary upload, no Google Drive OAuth, n
 
 ## Work Hub
 
-Work Hub is local-first in this phase. Outlook Import lives only under `/work`; it does not run from CRM pages, does not poll on page load, and does not import automatically. Provider readiness reads API configuration. Preview Outlook Emails and Refresh Preview are disabled with “Configure first” until Microsoft Graph env vars are present, then they make explicit bounded preview requests. Import Selected Emails writes only checked preview rows into local `email_messages`.
+Work Hub is local-first in this phase. Outlook Import lives only under `/work`; it does not run from CRM pages, does not poll on page load, and does not import automatically. Provider readiness reads API configuration and, on `/work`, the active Outlook connection state. Preview Outlook Emails and Refresh Preview are disabled until Microsoft Graph env vars are present and Outlook is connected, then they make explicit bounded preview requests. Import Selected Emails writes only checked preview rows into local `email_messages`.
 
-The preview MVP requires Microsoft Graph env vars in `apps/api/.env` plus a request-supplied access token. Smart Hub AI requires `OPENAI_API_KEY` for provider-backed draft generation, but deterministic link extraction, action candidates, and exact-match CRM suggestions work without AI configuration.
+Connect Outlook calls `GET /v1/outlook/auth/start` and opens the Microsoft authorization URL. The API callback stores tokens server-side only; the frontend receives connection status and account identity, never access or refresh token values. A hidden advanced request-token field remains for local development and tests.
 
-There is no full OAuth UI yet, no Gmail sync, no Sync All Mailbox, no sending, no Outlook draft creation, no attachment download, no OneDrive/SharePoint scan, no final report generation, and no automatic reminders or auto-linking.
+Smart Hub AI requires `OPENAI_API_KEY` for provider-backed draft generation, but deterministic link extraction, action candidates, and exact-match CRM suggestions work without AI configuration.
+
+There is no Gmail sync, no Sync All Mailbox, no sending, no Outlook draft creation, no attachment download, no full mailbox import, no OneDrive/SharePoint scan, no final report generation, and no automatic reminders or auto-linking.
 
 Every visible Work Hub action does real work: switch views, refresh provider status, search/filter local emails, preview Outlook emails when configured, import selected preview rows, paginate lists, link an email to a Client/Site/Job, summarize/extract/suggest from local messages, create reminders from selected suggestions, save file metadata links, create/edit/archive drafts, mark drafts reviewed/used, archive email records, and open stored file/link URLs.

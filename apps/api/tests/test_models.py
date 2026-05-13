@@ -14,6 +14,7 @@ from app.models import (
     Observation,
     Organization,
     OrganizationMembership,
+    OutlookConnection,
     Reminder,
     Report,
     Site,
@@ -35,6 +36,7 @@ EXPECTED_TABLES = {
     "observations",
     "organization_memberships",
     "organizations",
+    "outlook_connections",
     "reminders",
     "reports",
     "sites",
@@ -84,6 +86,8 @@ EXPECTED_INDEXES = {
     "ix_email_record_links_organization_id_email_message_id",
     "ix_ai_drafts_organization_id_status",
     "ix_ai_drafts_organization_id_draft_type",
+    "ix_outlook_connections_organization_id_status",
+    "ix_outlook_connections_organization_id_email_address",
 }
 
 
@@ -103,6 +107,7 @@ def test_model_metadata_contains_expected_indexes() -> None:
 def test_core_model_classes_import_cleanly() -> None:
     assert app.models
     assert Organization.__tablename__ == "organizations"
+    assert OutlookConnection.__tablename__ == "outlook_connections"
     assert User.__tablename__ == "users"
     assert OrganizationMembership.__tablename__ == "organization_memberships"
     assert Client.__tablename__ == "clients"

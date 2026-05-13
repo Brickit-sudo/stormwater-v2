@@ -35,6 +35,9 @@ import type {
   MaintenanceRecommendationDraftInput,
   MapSite,
   MapSiteListOptions,
+  OutlookAuthStartResponse,
+  OutlookAuthStatus,
+  OutlookDisconnectResponse,
   OutlookImportSelectedInput,
   OutlookImportSelectedResponse,
   OutlookPreviewInput,
@@ -670,8 +673,12 @@ export function createEmailImportBatch(
   });
 }
 
-export function getIntegrationsStatus(): Promise<IntegrationsStatus> {
-  return apiRequest<IntegrationsStatus>("/v1/integrations/status");
+export function getIntegrationsStatus(
+  organizationId?: UUID,
+): Promise<IntegrationsStatus> {
+  return apiRequest<IntegrationsStatus>("/v1/integrations/status", {
+    query: { organization_id: organizationId },
+  });
 }
 
 export function getAiStatus(): Promise<AiStatus> {
@@ -752,6 +759,31 @@ export function generateClientSummaryDraft(
 
 export function getOutlookStatus(): Promise<OutlookStatus> {
   return apiRequest<OutlookStatus>("/v1/outlook/status");
+}
+
+export function getOutlookAuthStatus(
+  organizationId: UUID,
+): Promise<OutlookAuthStatus> {
+  return apiRequest<OutlookAuthStatus>("/v1/outlook/auth/status", {
+    query: { organization_id: organizationId },
+  });
+}
+
+export function startOutlookAuth(
+  organizationId: UUID,
+): Promise<OutlookAuthStartResponse> {
+  return apiRequest<OutlookAuthStartResponse>("/v1/outlook/auth/start", {
+    query: { organization_id: organizationId },
+  });
+}
+
+export function disconnectOutlook(
+  organizationId: UUID,
+): Promise<OutlookDisconnectResponse> {
+  return apiRequest<OutlookDisconnectResponse>("/v1/outlook/auth/disconnect", {
+    method: "POST",
+    body: { organization_id: organizationId },
+  });
 }
 
 export function previewOutlookMessages(
