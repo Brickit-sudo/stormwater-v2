@@ -264,6 +264,65 @@ function Test-HttpUrl {
     }
 }
 
+function Test-FrontendStylesheetHealth {
+    param([string]$BaseUrl)
+
+    try {
+        $response = Invoke-WebRequest -Uri $BaseUrl -UseBasicParsing -TimeoutSec 5
+    }
+    catch {
+        return [pscustomobject]@{
+            Healthy = $false
+            Message = "frontend did not respond: $($_.Exception.Message)"
+        }
+    }
+
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
+        return [pscustomobject]@{
+            Healthy = $false
+            Message = "frontend returned HTTP $($response.StatusCode)"
+        }
+    }
+
+    $hrefs = @(
+        [regex]::Matches($response.Content, 'href="(?<href>[^"]+\.css[^"]*)"') |
+            ForEach-Object { [System.Net.WebUtility]::HtmlDecode($_.Groups["href"].Value) } |
+            Select-Object -Unique
+    )
+
+    if ($hrefs.Count -eq 0) {
+        return [pscustomobject]@{
+            Healthy = $false
+            Message = "no stylesheet link was found in the frontend HTML"
+        }
+    }
+
+    foreach ($href in $hrefs) {
+        $cssUrl = if ($href -match '^https?://') { $href } else { "${BaseUrl}$href" }
+        try {
+            $cssResponse = Invoke-WebRequest -Uri $cssUrl -UseBasicParsing -TimeoutSec 5
+            $contentType = [string]$cssResponse.Headers["Content-Type"]
+            if ($cssResponse.StatusCode -ge 200 -and $cssResponse.StatusCode -lt 300 -and $contentType -like "text/css*") {
+                return [pscustomobject]@{
+                    Healthy = $true
+                    Message = "stylesheet OK: $href"
+                }
+            }
+        }
+        catch {
+            return [pscustomobject]@{
+                Healthy = $false
+                Message = "stylesheet failed: $href - $($_.Exception.Message)"
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        Healthy = $false
+        Message = "stylesheet links were present but none returned text/css"
+    }
+}
+
 function Remove-StalePidFile {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -330,9 +389,13 @@ function Start-WebWindow {
         [string]$PidPath
     )
     $webUrl = "http://127.0.0.1:${WebPort}"
-    if (Test-HttpUrl -Url $webUrl) {
-        Write-Step "Frontend already responds at $webUrl. Skipping duplicate web window."
+    $frontendHealth = Test-FrontendStylesheetHealth -BaseUrl $webUrl
+    if ($frontendHealth.Healthy) {
+        Write-Step "Frontend already responds with healthy CSS at $webUrl. Skipping duplicate web window."
         return $null
+    }
+    if (Test-HttpUrl -Url $webUrl) {
+        throw "Frontend at $webUrl responds, but CSS health failed: $($frontendHealth.Message). This is usually a stale Next.js server after a rebuild. Stop old Node/Next processes on port $WebPort or run .\scripts\stop-v2-demo.ps1 if they were started by the launcher, then rerun this script."
     }
     if (Test-TcpPort -Port $WebPort) {
         throw "Port $WebPort is already in use, but the frontend did not respond. Use -WebPort or stop the process using that port."

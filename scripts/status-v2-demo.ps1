@@ -72,6 +72,47 @@ function Test-HttpUrl {
     }
 }
 
+function Test-FrontendStylesheetHealth {
+    param([string]$BaseUrl)
+
+    try {
+        $response = Invoke-WebRequest -Uri $BaseUrl -UseBasicParsing -TimeoutSec 5
+    }
+    catch {
+        return "not responding: $($_.Exception.Message)"
+    }
+
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
+        return "HTML failed HTTP $($response.StatusCode)"
+    }
+
+    $hrefs = @(
+        [regex]::Matches($response.Content, 'href="(?<href>[^"]+\.css[^"]*)"') |
+            ForEach-Object { [System.Net.WebUtility]::HtmlDecode($_.Groups["href"].Value) } |
+            Select-Object -Unique
+    )
+
+    if ($hrefs.Count -eq 0) {
+        return "CSS failed: no stylesheet link found"
+    }
+
+    foreach ($href in $hrefs) {
+        $cssUrl = if ($href -match '^https?://') { $href } else { "${BaseUrl}$href" }
+        try {
+            $cssResponse = Invoke-WebRequest -Uri $cssUrl -UseBasicParsing -TimeoutSec 5
+            $contentType = [string]$cssResponse.Headers["Content-Type"]
+            if ($cssResponse.StatusCode -ge 200 -and $cssResponse.StatusCode -lt 300 -and $contentType -like "text/css*") {
+                return "OK - stylesheet loaded: $href"
+            }
+        }
+        catch {
+            return "CSS failed: $href - $($_.Exception.Message)"
+        }
+    }
+
+    return "CSS failed: stylesheet links were present but none returned text/css"
+}
+
 function Show-TrackedProcess {
     param(
         [string]$Label,
@@ -101,6 +142,23 @@ function Show-TrackedProcess {
     }
     else {
         Write-Host "$Label tracked PID: $pidValue stale"
+    }
+}
+
+function Show-PortListeners {
+    param(
+        [string]$Label,
+        [int]$Port
+    )
+    $connections = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    if ($connections.Count -eq 0) {
+        Write-Host "$Label port listeners: none"
+        return
+    }
+    foreach ($connection in $connections) {
+        $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+        $processName = if ($process) { $process.ProcessName } else { "unknown" }
+        Write-Host "$Label listener: $($connection.LocalAddress):$Port PID $($connection.OwningProcess) ($processName)"
     }
 }
 
@@ -154,12 +212,15 @@ else {
 Write-Section "Demo Processes"
 Show-TrackedProcess -Label "API" -PidPath (Join-Path $RuntimeDir "api-window.pid") -ExpectedCommandFragment (Join-Path $RuntimeDir "run-api.ps1")
 Show-TrackedProcess -Label "Web" -PidPath (Join-Path $RuntimeDir "web-window.pid") -ExpectedCommandFragment (Join-Path $RuntimeDir "run-web.ps1")
+Show-PortListeners -Label "API" -Port $ApiPort
+Show-PortListeners -Label "Frontend" -Port $WebPort
 
 Write-Section "HTTP Checks"
 $apiHealth = "http://127.0.0.1:${ApiPort}/health"
 $webUrl = "http://127.0.0.1:${WebPort}"
 Write-Host "API health: $apiHealth - $(Test-HttpUrl -Url $apiHealth)"
 Write-Host "Frontend:   $webUrl - $(Test-HttpUrl -Url $webUrl)"
+Write-Host "Frontend CSS: $(Test-FrontendStylesheetHealth -BaseUrl $webUrl)"
 
 Write-Section "Next Commands"
 Write-Host "Start demo:        .\scripts\start-v2-demo.ps1 -Seed"

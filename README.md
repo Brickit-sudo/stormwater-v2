@@ -169,6 +169,9 @@ npm run dev
 ```
 
 The frontend runs at `http://localhost:3000`.
+For the one-command V2 demo, prefer `http://127.0.0.1:3000`; the launcher and
+status checks use that exact URL so a stale `localhost`/IPv6 listener cannot
+hide a broken or old frontend process.
 
 Create `apps/web/.env.local` from `apps/web/.env.example`:
 

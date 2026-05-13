@@ -79,6 +79,10 @@ cd apps\web
 npm run dev
 ```
 
+For the one-command local demo, open `http://127.0.0.1:3000`. If the page ever
+appears as raw unstyled HTML, run `..\..\scripts\status-v2-demo.ps1`; it checks
+that the HTML and CSS chunk are both coming from the active frontend server.
+
 Open:
 
 - `http://127.0.0.1:3000/search`

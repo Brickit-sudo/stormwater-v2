@@ -88,6 +88,18 @@ Use these same-machine URLs:
 - Work Hub: `http://127.0.0.1:3000/work`
 - Search: `http://127.0.0.1:3000/search`
 
+Use `127.0.0.1` for the demo URL. If `localhost:3000` or an old browser tab
+shows raw, unstyled HTML with default blue links, run:
+
+```powershell
+.\scripts\status-v2-demo.ps1
+```
+
+The status script checks that the frontend HTML and its CSS chunk both load. A
+CSS failure usually means a stale Next.js process is still serving an older
+build after `.next` changed. Close the old Node/Next window or stop the process
+on port `3000`, then rerun `.\scripts\start-v2-demo.ps1 -Seed`.
+
 ## Local Demo vs LAN Demo vs Tunnel
 
 ### Local Same-Machine Demo
