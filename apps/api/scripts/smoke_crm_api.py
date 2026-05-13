@@ -86,6 +86,13 @@ def _sample_names(response: dict[str, Any]) -> str:
     return ", ".join(names)
 
 
+def _require_timeline(name: str, response: dict[str, Any]) -> None:
+    if not isinstance(response.get("items"), list):
+        raise SmokeFailure(f"{name} timeline response did not include an items list.")
+    if response.get("limit") != 10:
+        raise SmokeFailure(f"{name} timeline response did not preserve limit=10.")
+
+
 def run_smoke(base_url: str, organization_id: str) -> None:
     health = _get_json(base_url, "/health")
     if health != {"status": "ok", "service": "stormwater-v2-api"}:
@@ -137,9 +144,29 @@ def run_smoke(base_url: str, organization_id: str) -> None:
 
     first_client = clients["items"][0]
     first_site = sites["items"][0]
+    first_job = jobs["items"][0]
     client_sites = _get_json(base_url, f"/v1/clients/{first_client['id']}/sites", query)
     client_jobs = _get_json(base_url, f"/v1/clients/{first_client['id']}/jobs", query)
     site_jobs = _get_json(base_url, f"/v1/sites/{first_site['id']}/jobs", query)
+    timeline_query = {"organization_id": organization_id, "limit": 10}
+    client_timeline = _get_json(
+        base_url,
+        "/v1/timeline",
+        {**timeline_query, "client_id": first_client["id"]},
+    )
+    site_timeline = _get_json(
+        base_url,
+        "/v1/timeline",
+        {**timeline_query, "site_id": first_site["id"]},
+    )
+    job_timeline = _get_json(
+        base_url,
+        "/v1/timeline",
+        {**timeline_query, "job_id": first_job["id"]},
+    )
+    _require_timeline("client", client_timeline)
+    _require_timeline("site", site_timeline)
+    _require_timeline("job", job_timeline)
 
     spring_inspection_job = next(
         (job for job in jobs["items"] if job.get("job_code") == "BAY-2026-INS"),
@@ -190,6 +217,12 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     print(f"linked client sites: {client_sites['total']} for {first_client['name']}")
     print(f"linked client jobs: {client_jobs['total']} for {first_client['name']}")
     print(f"linked site jobs: {site_jobs['total']} for {first_site['name']}")
+    print(
+        "timelines: "
+        f"client={len(client_timeline['items'])}, "
+        f"site={len(site_timeline['items'])}, "
+        f"job={len(job_timeline['items'])}",
+    )
     if spring_inspection_job is not None:
         print(
             f"job-scoped files: {job_files['total']} for "

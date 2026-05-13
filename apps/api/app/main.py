@@ -18,6 +18,7 @@ from app.routers import (
     outlook_import,
     reminders,
     sites,
+    timeline,
 )
 
 
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(email_messages.router)
     app.include_router(email_record_links.router)
     app.include_router(ai_drafts.router)
+    app.include_router(timeline.router)
     return app
 
 

@@ -53,6 +53,8 @@ import type {
   ReminderUpdate,
   Site,
   SiteFormInput,
+  TimelineEntry,
+  TimelineListOptions,
   SuggestRecordLinksInput,
   SuggestRecordLinksResponse,
   UUID,
@@ -271,6 +273,22 @@ function emailImportBatchQuery({
   };
 }
 
+function timelineQuery({
+  organizationId,
+  clientId,
+  siteId,
+  jobId,
+  limit,
+}: TimelineListOptions): Record<string, QueryValue> {
+  return {
+    organization_id: organizationId,
+    client_id: clientId,
+    site_id: siteId,
+    job_id: jobId,
+    limit,
+  };
+}
+
 export function listClients(options: ListOptions): Promise<ListResponse<Client>> {
   return apiRequest<ListResponse<Client>>("/v1/clients", {
     query: orgQuery(options),
@@ -392,6 +410,14 @@ export function getSiteJobs(
 export function listJobs(options: ListOptions): Promise<ListResponse<Job>> {
   return apiRequest<ListResponse<Job>>("/v1/jobs", {
     query: orgQuery(options),
+  });
+}
+
+export function listTimeline(
+  options: TimelineListOptions,
+): Promise<ListResponse<TimelineEntry>> {
+  return apiRequest<ListResponse<TimelineEntry>>("/v1/timeline", {
+    query: timelineQuery(options),
   });
 }
 

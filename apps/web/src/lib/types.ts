@@ -153,6 +153,42 @@ export type ListOptions = {
   offset?: number;
 };
 
+export type TimelineEntryType =
+  | "record"
+  | "job"
+  | "reminder"
+  | "file"
+  | "email"
+  | "email_link"
+  | "ai_draft"
+  | "import_batch"
+  | "outlook_draft";
+
+export type TimelineEntry = {
+  id: string;
+  type: TimelineEntryType;
+  title: string;
+  description: string | null;
+  occurred_at: string;
+  source_table: string;
+  source_id: UUID;
+  status: string | null;
+  priority: string | null;
+  related_client_id: UUID | null;
+  related_site_id: UUID | null;
+  related_job_id: UUID | null;
+  href: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+export type TimelineListOptions = {
+  organizationId: UUID;
+  clientId?: UUID;
+  siteId?: UUID;
+  jobId?: UUID;
+  limit?: number;
+};
+
 export type MapSiteListOptions = {
   organizationId: UUID;
   status?: string;

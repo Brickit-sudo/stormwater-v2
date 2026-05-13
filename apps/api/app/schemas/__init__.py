@@ -82,6 +82,7 @@ from app.schemas.site import (
     SiteRead,
     SiteUpdate,
 )
+from app.schemas.timeline import TimelineEntry, TimelineListResponse
 
 __all__ = [
     "AiStatusResponse",
@@ -158,4 +159,6 @@ __all__ = [
     "SiteUpdate",
     "SuggestRecordLinksRequest",
     "SuggestRecordLinksResponse",
+    "TimelineEntry",
+    "TimelineListResponse",
 ]

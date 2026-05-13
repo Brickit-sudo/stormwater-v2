@@ -15,6 +15,7 @@ from app.routers import (
     outlook_import,
     reminders,
     sites,
+    timeline,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "outlook_import",
     "reminders",
     "sites",
+    "timeline",
 ]
