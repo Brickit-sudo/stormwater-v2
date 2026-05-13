@@ -189,6 +189,43 @@ export type TimelineListOptions = {
   limit?: number;
 };
 
+export type ReportReadinessOverallStatus =
+  | "ready"
+  | "needs_attention"
+  | "blocked";
+
+export type ReportReadinessCheckStatus = "pass" | "warning" | "fail";
+
+export type ReportReadinessSeverity = "low" | "medium" | "high";
+
+export type ReportReadinessGroup =
+  | "Required"
+  | "Supporting Evidence"
+  | "Open Issues"
+  | "Draft / Communication Context";
+
+export type ReportReadinessCheck = {
+  key: string;
+  label: string;
+  group: ReportReadinessGroup;
+  status: ReportReadinessCheckStatus;
+  severity: ReportReadinessSeverity;
+  message: string;
+  related_count: number | null;
+  suggested_next_step: string | null;
+};
+
+export type ReportReadiness = {
+  job_id: UUID;
+  overall_status: ReportReadinessOverallStatus;
+  score: number | null;
+  summary: string;
+  checks: ReportReadinessCheck[];
+  blockers: ReportReadinessCheck[];
+  warnings: ReportReadinessCheck[];
+  ready_items: ReportReadinessCheck[];
+};
+
 export type MapSiteListOptions = {
   organizationId: UUID;
   status?: string;

@@ -47,6 +47,7 @@ import type {
   OutlookStatus,
   ReportSectionDraftInput,
   ReportSectionDraftResponse,
+  ReportReadiness,
   Reminder,
   ReminderCreate,
   ReminderListOptions,
@@ -418,6 +419,15 @@ export function listTimeline(
 ): Promise<ListResponse<TimelineEntry>> {
   return apiRequest<ListResponse<TimelineEntry>>("/v1/timeline", {
     query: timelineQuery(options),
+  });
+}
+
+export function getJobReportReadiness(
+  jobId: UUID,
+  organizationId: UUID,
+): Promise<ReportReadiness> {
+  return apiRequest<ReportReadiness>(`/v1/jobs/${jobId}/report-readiness`, {
+    query: { organization_id: organizationId },
   });
 }
 

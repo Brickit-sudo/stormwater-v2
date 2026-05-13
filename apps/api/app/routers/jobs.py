@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.schemas import JobCreate, JobListResponse, JobRead, JobUpdate
-from app.services import jobs_service
+from app.schemas import JobCreate, JobListResponse, JobRead, JobUpdate, ReportReadinessResponse
+from app.services import jobs_service, report_readiness_service
 from app.services.common import CRMNotFoundError, CRMValidationError
 
 
@@ -68,6 +68,22 @@ def get_job(job_id: uuid.UUID, db: SessionDep, organization_id: OrgQuery) -> Job
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
     return job
+
+
+@router.get("/{job_id}/report-readiness", response_model=ReportReadinessResponse)
+def get_job_report_readiness(
+    job_id: uuid.UUID,
+    db: SessionDep,
+    organization_id: OrgQuery,
+) -> ReportReadinessResponse:
+    try:
+        return report_readiness_service.get_report_readiness(
+            db,
+            organization_id=organization_id,
+            job_id=job_id,
+        )
+    except CRMNotFoundError as error:
+        _raise_http_error(error)
 
 
 @router.patch("/{job_id}", response_model=JobRead)

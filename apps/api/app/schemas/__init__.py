@@ -73,6 +73,10 @@ from app.schemas.reminder import (
     ReminderRead,
     ReminderUpdate,
 )
+from app.schemas.report_readiness import (
+    ReportReadinessCheck,
+    ReportReadinessResponse,
+)
 from app.schemas.site import (
     SiteBase,
     SiteCreate,
@@ -148,6 +152,8 @@ __all__ = [
     "ReminderListResponse",
     "ReminderRead",
     "ReminderUpdate",
+    "ReportReadinessCheck",
+    "ReportReadinessResponse",
     "ReportSectionDraftRequest",
     "ReportSectionDraftResponse",
     "SiteBase",

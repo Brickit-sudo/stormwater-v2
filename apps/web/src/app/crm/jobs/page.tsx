@@ -7,6 +7,7 @@ import DetailPanel, { DetailField } from "@/components/crm/DetailPanel";
 import DriveFilePanel from "@/components/crm/DriveFilePanel";
 import EmptyState from "@/components/crm/EmptyState";
 import EntityTable, { type EntityColumn } from "@/components/crm/EntityTable";
+import ReportReadinessPanel from "@/components/crm/ReportReadinessPanel";
 import StatusBadge from "@/components/crm/StatusBadge";
 import TimelinePanel from "@/components/crm/TimelinePanel";
 import SectionHeader from "@/components/ui/SectionHeader";
@@ -713,6 +714,11 @@ export default function JobsPage() {
                   <DetailField label="Drive URL" value={selectedJob.drive_folder_url} />
                   <DetailField label="Notes" value={selectedJob.notes} />
                 </dl>
+
+                <ReportReadinessPanel
+                  organizationId={organizationId}
+                  jobId={selectedJob.id}
+                />
 
                 <DriveFilePanel
                   organizationId={organizationId}

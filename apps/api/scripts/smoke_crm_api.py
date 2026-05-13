@@ -31,6 +31,7 @@ EXPECTED_COUNTS = {
     "ai_drafts": 3,
     "email_import_batches": 1,
 }
+VALID_READINESS_STATUSES = {"ready", "needs_attention", "blocked"}
 
 
 class SmokeFailure(RuntimeError):
@@ -164,9 +165,16 @@ def run_smoke(base_url: str, organization_id: str) -> None:
         "/v1/timeline",
         {**timeline_query, "job_id": first_job["id"]},
     )
+    job_readiness = _get_json(
+        base_url,
+        f"/v1/jobs/{first_job['id']}/report-readiness",
+        {"organization_id": organization_id},
+    )
     _require_timeline("client", client_timeline)
     _require_timeline("site", site_timeline)
     _require_timeline("job", job_timeline)
+    if job_readiness.get("overall_status") not in VALID_READINESS_STATUSES:
+        raise SmokeFailure(f"Unexpected report readiness response: {job_readiness!r}.")
 
     spring_inspection_job = next(
         (job for job in jobs["items"] if job.get("job_code") == "BAY-2026-INS"),
@@ -222,6 +230,11 @@ def run_smoke(base_url: str, organization_id: str) -> None:
         f"client={len(client_timeline['items'])}, "
         f"site={len(site_timeline['items'])}, "
         f"job={len(job_timeline['items'])}",
+    )
+    print(
+        "job report readiness: "
+        f"{job_readiness['overall_status']} "
+        f"({job_readiness.get('score', 'n/a')}%) for {first_job['name']}",
     )
     if spring_inspection_job is not None:
         print(
