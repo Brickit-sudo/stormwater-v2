@@ -23,6 +23,31 @@ docs/
 
 ## Development
 
+### One-Command Local Demo
+
+For a Bryce boss demo with local seed data, run this from the V2 repo root:
+
+```powershell
+.\scripts\start-v2-demo.ps1 -Seed
+```
+
+For a fresh deterministic seed reset:
+
+```powershell
+.\scripts\start-v2-demo.ps1 -ResetSeed
+```
+
+Check status or stop the demo:
+
+```powershell
+.\scripts\status-v2-demo.ps1
+.\scripts\stop-v2-demo.ps1
+```
+
+Local demo details are in [docs/deployment/local-demo.md](docs/deployment/local-demo.md). The 24/7 staging path is in [docs/deployment/staging-deploy-plan.md](docs/deployment/staging-deploy-plan.md).
+
+Use demo/seed data only unless auth and hosting are configured.
+
 ### Local End-To-End CRM
 
 Start the local Postgres container if it already exists:
@@ -276,6 +301,7 @@ V2 now has a database/import contract, safe fake CSV templates, and a standalone
 - Contract: `docs/architecture/v2-database-import-contract.md`
 - Fake templates: `docs/import_templates/v2/`
 - Validator: `apps/api/scripts/validate_import_templates.py`
+- Local demo and staging safety notes: `docs/deployment/`
 
 Run the validator with private copies of the templates before any real import planning:
 

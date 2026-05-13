@@ -27,7 +27,10 @@ Thumbs.db
 .vscode/
 
 # Local dev logs
+logs/
 *.log
+*.pid
+.v2-demo/
 
 # V1 migration private/generated artifacts
 apps/api/migration_maps/*.csv

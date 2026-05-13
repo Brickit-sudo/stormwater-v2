@@ -10,6 +10,21 @@ npm install
 copy .env.example .env.local
 ```
 
+For the full local V2 demo launcher, use this from the repo root:
+
+```powershell
+.\scripts\start-v2-demo.ps1 -Seed
+```
+
+Status and stop helpers:
+
+```powershell
+.\scripts\status-v2-demo.ps1
+.\scripts\stop-v2-demo.ps1
+```
+
+See `..\..\docs\deployment\local-demo.md` and `..\..\docs\deployment\staging-deploy-plan.md`.
+
 Set `apps/web/.env.local`:
 
 ```text
