@@ -124,6 +124,8 @@ Stop the import path when any of these are present:
 - Confirm no real/private source files are staged or committed.
 - Confirm validator output is saved only to ignored report paths when it contains private clues.
 
+For the first tiny real Clients/Sites sample, use `docs/import_templates/v2/tiny-real-sample-workflow.md` and `scripts/validate-v2-import-sample.ps1`. Keep private CSVs under `docs/import_templates/v2/private/`, write reports under `import_validation_reports/`, and stop after validation. A clean validation result is not import approval.
+
 ## 9. Future V2 Import Center
 
 The future Import Center should read private source files locally, create an `import_batches` dry-run summary, stage each row in `import_rows`, show invalid/duplicate/unmatched rows for review, and only enable a commit step after all stop conditions are resolved.

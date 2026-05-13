@@ -317,17 +317,35 @@ V2 now has a database/import contract, safe fake CSV templates, and a standalone
 
 - Contract: `docs/architecture/v2-database-import-contract.md`
 - Fake templates: `docs/import_templates/v2/`
+- Tiny real Clients/Sites sample workflow: `docs/import_templates/v2/tiny-real-sample-workflow.md`
 - Validator: `apps/api/scripts/validate_import_templates.py`
 - Local demo and staging safety notes: `docs/deployment/`
 
-Run the validator with private copies of the templates before any real import planning:
+For the first tiny real Clients/Sites check, keep private files under `docs\import_templates\v2\private\` and run the root helper:
+
+```powershell
+cd C:\Users\brolf\Desktop\Stormwater_APP_Clean\stormwater-v2
+.\scripts\validate-v2-import-sample.ps1
+```
+
+Explicit private paths:
+
+```powershell
+.\scripts\validate-v2-import-sample.ps1 `
+  -ClientsPath "docs\import_templates\v2\private\clients_tiny_sample.csv" `
+  -SitesPath "docs\import_templates\v2\private\sites_tiny_sample.csv"
+```
+
+This tiny workflow is validation only. It does not import data, write to the database, run V1 apply, call providers, crawl Drive/mailboxes, or generate reports.
+
+For broader fake-template checks, run the validator directly:
 
 ```powershell
 cd apps\api
 .\.venv\Scripts\python scripts\validate_import_templates.py --clients "..\..\docs\import_templates\v2\clients_template.csv" --sites "..\..\docs\import_templates\v2\sites_template.csv" --jobs "..\..\docs\import_templates\v2\jobs_template.csv" --documents "..\..\docs\import_templates\v2\documents_template.csv"
 ```
 
-This is validation only: no database writes, no V1 apply, no provider calls, no Drive or mailbox crawl, and no report generation.
+Real data files and validation reports stay private and ignored: `docs\import_templates\v2\private\`, `docs\import_templates\v2\filled\`, `apps\api\import_data\`, and `import_validation_reports\`.
 
 ### Internal Product Roadmap
 

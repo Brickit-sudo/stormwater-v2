@@ -803,6 +803,83 @@ def _build_summary(
     return summary
 
 
+def _build_totals(report: Mapping[str, Any]) -> dict[str, int]:
+    summary = report.get("summary", {})
+    return {
+        "total_rows": sum(values["total_rows"] for values in summary.values()),
+        "valid_rows": sum(values["valid_rows"] for values in summary.values()),
+        "invalid_rows": sum(values["invalid_rows"] for values in summary.values()),
+        "duplicate_rows": sum(values["duplicate_rows"] for values in summary.values()),
+        "unresolved_references": len(report.get("unresolved_references", [])),
+    }
+
+
+def _build_duplicate_summary(report: Mapping[str, Any]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for item in report.get("duplicate_rows", []):
+        key = (item["import_type"], item["field"], _clean(item["value"]))
+        bucket = grouped.setdefault(
+            key,
+            {
+                "import_type": item["import_type"],
+                "field": item["field"],
+                "value": item["value"],
+                "first_row": item["first_row"],
+                "duplicate_rows": [],
+                "count": 0,
+            },
+        )
+        bucket["duplicate_rows"].append(item["row_number"])
+        bucket["count"] += 1
+    return sorted(grouped.values(), key=lambda item: (item["import_type"], item["field"], item["first_row"]))
+
+
+def _build_unresolved_reference_summary(report: Mapping[str, Any]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for item in report.get("unresolved_references", []):
+        key = (
+            item["import_type"],
+            item["field"],
+            item["target_type"],
+            _clean(item["target_external_id"]),
+        )
+        bucket = grouped.setdefault(
+            key,
+            {
+                "import_type": item["import_type"],
+                "field": item["field"],
+                "target_type": item["target_type"],
+                "target_external_id": item["target_external_id"],
+                "rows": [],
+                "count": 0,
+            },
+        )
+        bucket["rows"].append(item["row_number"])
+        bucket["count"] += 1
+    return sorted(
+        grouped.values(),
+        key=lambda item: (item["import_type"], item["field"], item["target_type"], item["target_external_id"]),
+    )
+
+
+def _recommended_next_action(report: Mapping[str, Any]) -> str:
+    if report.get("ready"):
+        return (
+            "Validation is clean. Keep the source files private, review the report summary, "
+            "and continue only to the next reviewed import-planning step. No import has run."
+        )
+    if not report.get("inputs"):
+        return "Provide private CSV paths or create the tiny sample files, then rerun validation."
+    if report.get("unresolved_references"):
+        return (
+            "Fix unresolved relationships first, especially Sites whose client_external_id "
+            "does not match a Client row, then rerun validation. Do not import."
+        )
+    if report.get("duplicate_rows"):
+        return "Fix duplicate external IDs, then rerun validation. Do not import."
+    return "Fix the listed stop conditions, then rerun validation. Do not import."
+
+
 def validate_import_templates(
     *,
     clients: str | Path | None = None,
@@ -823,11 +900,16 @@ def validate_import_templates(
     report: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "ready": False,
+        "safe_to_proceed": False,
+        "recommended_next_action": "Provide private CSV paths or create sample files, then rerun validation.",
         "inputs": {},
         "summary": {},
+        "totals": {},
         "invalid_rows": [],
         "duplicate_rows": [],
+        "duplicate_summary": [],
         "unresolved_references": [],
+        "unresolved_reference_summary": [],
         "stop_conditions": [],
         "safety": {
             "db_writes": False,
@@ -881,6 +963,9 @@ def validate_import_templates(
 
     report["invalid_rows"].sort(key=lambda item: (item["import_type"], item["row_number"]))
     report["summary"] = _build_summary(datasets, row_issues)
+    report["duplicate_summary"] = _build_duplicate_summary(report)
+    report["unresolved_reference_summary"] = _build_unresolved_reference_summary(report)
+    report["totals"] = _build_totals(report)
 
     total_invalid = sum(item["invalid_rows"] for item in report["summary"].values())
     if total_invalid:
@@ -893,6 +978,8 @@ def validate_import_templates(
         )
 
     report["ready"] = not report["stop_conditions"]
+    report["safe_to_proceed"] = report["ready"]
+    report["recommended_next_action"] = _recommended_next_action(report)
     return report
 
 
@@ -913,6 +1000,7 @@ def _markdown_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> li
 
 
 def render_markdown_report(report: Mapping[str, Any]) -> str:
+    totals = report.get("totals", {})
     summary_rows = [
         (
             import_type,
@@ -929,9 +1017,21 @@ def render_markdown_report(report: Mapping[str, Any]) -> str:
         (
             item["import_type"],
             item["row_number"],
+            "; ".join(f"{error.get('field') or '-'}:{error['code']}" for error in item["errors"]),
             "; ".join(error["message"] for error in item["errors"]),
         )
         for item in report.get("invalid_rows", [])
+    ]
+    duplicate_summary_rows = [
+        (
+            item["import_type"],
+            item["field"],
+            item["value"],
+            item["first_row"],
+            ", ".join(str(row) for row in item["duplicate_rows"]),
+            item["count"],
+        )
+        for item in report.get("duplicate_summary", [])
     ]
     duplicate_rows = [
         (
@@ -942,6 +1042,17 @@ def render_markdown_report(report: Mapping[str, Any]) -> str:
             item["first_row"],
         )
         for item in report.get("duplicate_rows", [])
+    ]
+    unresolved_summary_rows = [
+        (
+            item["import_type"],
+            item["field"],
+            item["target_type"],
+            item["target_external_id"],
+            ", ".join(str(row) for row in item["rows"]),
+            item["count"],
+        )
+        for item in report.get("unresolved_reference_summary", [])
     ]
     unresolved_rows = [
         (
@@ -960,6 +1071,13 @@ def render_markdown_report(report: Mapping[str, Any]) -> str:
         "",
         f"- Generated at: `{report.get('generated_at')}`",
         f"- Ready: {'YES' if report.get('ready') else 'NO'}",
+        f"- Safe to proceed: {'YES' if report.get('safe_to_proceed') else 'NO'}",
+        f"- Recommended next action: {report.get('recommended_next_action')}",
+        f"- Total rows: {totals.get('total_rows', 0)}",
+        f"- Valid rows: {totals.get('valid_rows', 0)}",
+        f"- Invalid rows: {totals.get('invalid_rows', 0)}",
+        f"- Duplicate rows: {totals.get('duplicate_rows', 0)}",
+        f"- Unresolved references: {totals.get('unresolved_references', 0)}",
         f"- DB writes: {report.get('safety', {}).get('db_writes')}",
         f"- Provider calls: {report.get('safety', {}).get('provider_calls')}",
         "",
@@ -970,13 +1088,21 @@ def render_markdown_report(report: Mapping[str, Any]) -> str:
         ),
         "",
         "## Stop Conditions",
+        "These must be cleared before any import planning continues.",
+        "",
         *stop_condition_lines,
         "",
         "## Invalid Rows",
-        *_markdown_table(("Type", "Row", "Errors"), invalid_rows),
+        *_markdown_table(("Type", "Row", "Codes", "Errors"), invalid_rows),
+        "",
+        "## Duplicate Summary",
+        *_markdown_table(("Type", "Field", "Value", "First Row", "Duplicate Rows", "Count"), duplicate_summary_rows),
         "",
         "## Duplicate Rows",
         *_markdown_table(("Type", "Row", "Field", "Value", "First Row"), duplicate_rows),
+        "",
+        "## Unresolved Reference Summary",
+        *_markdown_table(("Type", "Field", "Target Type", "Target External ID", "Rows", "Count"), unresolved_summary_rows),
         "",
         "## Unresolved References",
         *_markdown_table(("Type", "Row", "Field", "Target Type", "Target External ID"), unresolved_rows),

@@ -4,6 +4,8 @@ These CSVs are fake, commit-safe templates for dry-run validation only. They con
 
 Use them as headers and examples, then create private working copies under an ignored path such as `docs/import_templates/v2/private/` or `docs/import_templates/v2/filled/`.
 
+For the first tiny real Clients/Sites sample, follow [tiny-real-sample-workflow.md](tiny-real-sample-workflow.md). Start with 3 to 5 clients and 5 to 10 sites, validate only, and do not import anything.
+
 ## Files
 
 - `clients_template.csv`: canonical client rows plus alias hints.
@@ -19,4 +21,6 @@ Use them as headers and examples, then create private working copies under an ig
 - Use `example.com` email addresses in examples and tests.
 - Do not paste real addresses into committed templates.
 - Do not run a real import from these files.
+- Run `scripts/validate-v2-import-sample.ps1` for the tiny private Clients/Sites sample.
 - Run `apps/api/scripts/validate_import_templates.py` before any future import-center work.
+- Keep generated reports under ignored `import_validation_reports/`.

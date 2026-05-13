@@ -235,7 +235,23 @@ The V2 import foundation is separate from the older V1 migration dry-run. It def
 
 - Contract: `..\..\docs\architecture\v2-database-import-contract.md`
 - Templates: `..\..\docs\import_templates\v2\`
+- Tiny real Clients/Sites workflow: `..\..\docs\import_templates\v2\tiny-real-sample-workflow.md`
 - Validator: `scripts\validate_import_templates.py`
+
+First tiny private Clients/Sites validation from the repo root:
+
+```powershell
+cd C:\Users\brolf\Desktop\Stormwater_APP_Clean\stormwater-v2
+.\scripts\validate-v2-import-sample.ps1
+```
+
+Explicit private sample paths:
+
+```powershell
+.\scripts\validate-v2-import-sample.ps1 `
+  -ClientsPath "docs\import_templates\v2\private\clients_tiny_sample.csv" `
+  -SitesPath "docs\import_templates\v2\private\sites_tiny_sample.csv"
+```
 
 Example validation against the committed fake templates:
 
@@ -244,7 +260,7 @@ cd apps\api
 .\.venv\Scripts\python scripts\validate_import_templates.py --clients "..\..\docs\import_templates\v2\clients_template.csv" --contacts "..\..\docs\import_templates\v2\contacts_template.csv" --sites "..\..\docs\import_templates\v2\sites_template.csv" --jobs "..\..\docs\import_templates\v2\jobs_template.csv" --documents "..\..\docs\import_templates\v2\documents_template.csv" --emails "..\..\docs\import_templates\v2\emails_template.csv"
 ```
 
-The validator reads CSV files only. It does not open a database connection, write CRM rows, call Outlook/Gmail/Drive/OpenAI, run a V1 apply migration, or import real data. Private real-data copies belong under ignored paths such as `docs\import_templates\v2\private\`, `docs\import_templates\v2\filled\`, or `apps\api\import_data\`.
+The validator reads CSV files only. It does not open a database connection, write CRM rows, call Outlook/Gmail/Drive/OpenAI, run a V1 apply migration, or import real data. Private real-data copies belong under ignored paths such as `docs\import_templates\v2\private\`, `docs\import_templates\v2\filled\`, or `apps\api\import_data\`. Generated validation reports belong under ignored `import_validation_reports\`.
 
 ## Current Endpoints
 
