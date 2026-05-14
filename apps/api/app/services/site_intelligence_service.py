@@ -140,14 +140,21 @@ def _validate_optional_scope(
     site_id: uuid.UUID | None = None,
     job_id: uuid.UUID | None = None,
 ) -> None:
-    if sum(value is not None for value in (client_id, site_id, job_id)) > 1:
-        raise CRMValidationError("Use at most one of client_id, site_id, or job_id.")
+    site = None
+    job = None
     if client_id is not None:
         _require_record(db, organization_id=organization_id, record_type="client", record_id=client_id)
     if site_id is not None:
-        _require_record(db, organization_id=organization_id, record_type="site", record_id=site_id)
+        site = _require_record(db, organization_id=organization_id, record_type="site", record_id=site_id)
     if job_id is not None:
-        _require_record(db, organization_id=organization_id, record_type="job", record_id=job_id)
+        job = _require_record(db, organization_id=organization_id, record_type="job", record_id=job_id)
+
+    if site is not None and client_id is not None and site.client_id != client_id:
+        raise CRMValidationError("site_id must belong to client_id.")
+    if job is not None and site_id is not None and job.site_id != site_id:
+        raise CRMValidationError("job_id must belong to site_id.")
+    if job is not None and client_id is not None and job.client_id != client_id:
+        raise CRMValidationError("job_id must belong to client_id.")
 
 
 def list_bmp_systems(
@@ -434,10 +441,11 @@ def _knowledge_values(db: Session, data: dict[str, Any], organization_id: uuid.U
     )
     source_type = data.get("source_type")
     source_id = data.get("source_id")
-    if source_type:
+    if (source_type is None) != (source_id is None):
+        raise CRMValidationError("source_type and source_id must be provided together.")
+    if source_type is not None:
         source_type = _validate_allowed(source_type, ALLOWED_RECORD_TYPES, "source_type")
-        if source_id is not None:
-            _require_record(db, organization_id=organization_id, record_type=source_type, record_id=source_id)
+        _require_record(db, organization_id=organization_id, record_type=source_type, record_id=source_id)
     return {
         "client_id": data.get("client_id"),
         "site_id": data.get("site_id"),

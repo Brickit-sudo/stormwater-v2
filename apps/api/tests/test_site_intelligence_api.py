@@ -180,6 +180,119 @@ def test_knowledge_items_are_scoped_and_type_validated(
     assert invalid_response.status_code == 400
 
 
+def test_knowledge_and_documents_allow_related_scope_combinations(
+    api_client: TestClient,
+    organization_id: str,
+    create_client_record: Callable[..., dict[str, Any]],
+    create_site_record: Callable[..., dict[str, Any]],
+    create_job_record: Callable[..., dict[str, Any]],
+) -> None:
+    client = create_client_record()
+    site = create_site_record(client_id=client["id"])
+    job = create_job_record(client_id=client["id"], site_id=site["id"])
+
+    site_job_knowledge = api_client.post(
+        "/v1/knowledge-items",
+        json={
+            "organization_id": organization_id,
+            "site_id": site["id"],
+            "job_id": job["id"],
+            "title": "Job access",
+            "content": "Use the same staging area for this job.",
+            "knowledge_type": "site_access",
+        },
+    )
+    assert site_job_knowledge.status_code == 201, site_job_knowledge.text
+
+    full_scope_knowledge = api_client.post(
+        "/v1/knowledge-items",
+        json={
+            "organization_id": organization_id,
+            "client_id": client["id"],
+            "site_id": site["id"],
+            "job_id": job["id"],
+            "title": "Client site job context",
+            "content": "Client prefers the report note to mention the basin ID.",
+            "knowledge_type": "client_preference",
+        },
+    )
+    assert full_scope_knowledge.status_code == 201, full_scope_knowledge.text
+
+    site_job_document = api_client.post(
+        "/v1/documents",
+        json={
+            "organization_id": organization_id,
+            "site_id": site["id"],
+            "job_id": job["id"],
+            "source": "demo_test",
+            "file_name": "Job Photosheet.pdf",
+            "document_type": "photosheet",
+        },
+    )
+    assert site_job_document.status_code == 201, site_job_document.text
+
+    unscoped_knowledge = api_client.post(
+        "/v1/knowledge-items",
+        json={
+            "organization_id": organization_id,
+            "title": "Reusable report phrase",
+            "content": "Use this only as general report language.",
+            "knowledge_type": "report_language",
+        },
+    )
+    assert unscoped_knowledge.status_code == 201, unscoped_knowledge.text
+
+    unscoped_document = api_client.post(
+        "/v1/documents",
+        json={
+            "organization_id": organization_id,
+            "source": "manual",
+            "file_name": "General Reference.pdf",
+            "document_type": "unknown",
+        },
+    )
+    assert unscoped_document.status_code == 201, unscoped_document.text
+
+
+def test_knowledge_item_source_type_and_source_id_must_be_paired(
+    api_client: TestClient,
+    organization_id: str,
+    create_site_record: Callable[..., dict[str, Any]],
+) -> None:
+    site = create_site_record()
+    base_payload = {
+        "organization_id": organization_id,
+        "site_id": site["id"],
+        "title": "Source pairing",
+        "content": "Source metadata should be complete when present.",
+        "knowledge_type": "site_access",
+    }
+
+    source_id_only = api_client.post(
+        "/v1/knowledge-items",
+        json={**base_payload, "source_id": site["id"]},
+    )
+    assert source_id_only.status_code == 400
+
+    source_type_only = api_client.post(
+        "/v1/knowledge-items",
+        json={**base_payload, "source_type": "site"},
+    )
+    assert source_type_only.status_code == 400
+
+    both_source_fields = api_client.post(
+        "/v1/knowledge-items",
+        json={**base_payload, "source_type": "site", "source_id": site["id"]},
+    )
+    assert both_source_fields.status_code == 201, both_source_fields.text
+
+    neither_source_field = api_client.post(
+        "/v1/knowledge-items",
+        json={**base_payload, "title": "No source metadata"},
+    )
+    assert neither_source_field.status_code == 201, neither_source_field.text
+
+
 def test_document_intake_records_chunks_fields_and_link_suggestions(
     api_client: TestClient,
     organization_id: str,

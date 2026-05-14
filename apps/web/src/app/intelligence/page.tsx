@@ -95,6 +95,20 @@ function statusTone(status: string | null | undefined) {
   return "muted" as const;
 }
 
+function mergeRecordLinks(...linkGroups: RecordLink[][]): RecordLink[] {
+  const linksById = new Map<string, RecordLink>();
+  for (const links of linkGroups) {
+    for (const link of links) {
+      linksById.set(link.id, link);
+    }
+  }
+  return Array.from(linksById.values()).sort((first, second) => {
+    const createdComparison = second.created_at.localeCompare(first.created_at);
+    if (createdComparison !== 0) return createdComparison;
+    return first.id.localeCompare(second.id);
+  });
+}
+
 function Panel({
   title,
   children,
@@ -620,7 +634,8 @@ export default function IntelligencePage() {
         noteResponse,
         knowledgeResponse,
         documentResponse,
-        linkResponse,
+        targetLinkResponse,
+        sourceLinkResponse,
       ] = await Promise.all([
         listBmpSystems({ organizationId, siteId: selectedSiteId, limit: 100 }),
         listObservations({ organizationId, siteId: selectedSiteId, limit: 100 }),
@@ -638,13 +653,19 @@ export default function IntelligencePage() {
           targetId: selectedSiteId,
           limit: 100,
         }),
+        listRecordLinks({
+          organizationId,
+          sourceType: "site",
+          sourceId: selectedSiteId,
+          limit: 100,
+        }),
       ]);
       setBmps(bmpResponse.items);
       setObservations(observationResponse.items);
       setNotes(noteResponse.items);
       setKnowledgeItems(knowledgeResponse.items);
       setDocuments(documentResponse.items);
-      setRecordLinks(linkResponse.items);
+      setRecordLinks(mergeRecordLinks(targetLinkResponse.items, sourceLinkResponse.items));
       setSelectedDocumentId((current) => {
         if (current && documentResponse.items.some((document) => document.id === current)) {
           return current;
