@@ -120,6 +120,13 @@ REVIEW_WORKBOOK_SHEETS = (
     "Instructions",
 )
 
+REVIEW_WORKBOOK_APPLY_SHEETS = {
+    "unresolved_sites": ("Unresolved Sites", UNRESOLVED_SITES_REVIEW_COLUMNS),
+    "client_status": ("Client Status Review", CLIENT_STATUS_REVIEW_COLUMNS),
+    "duplicate_sites": ("Duplicate Sites", DUPLICATE_SITES_REVIEW_COLUMNS),
+    "status_defaults": ("Status Defaults", STATUS_DEFAULTS_REVIEW_COLUMNS),
+}
+
 SITE_REVIEW_BUCKET_LABELS = {
     "site_id_not_found_in_leads": "Site IDs not found in Leads",
     "site_has_no_client_id": "sites with no Client ID",
@@ -210,6 +217,15 @@ class ReviewedSampleSummary:
 class ReviewWorkbookSummary:
     workbook_path: Path
     source_review_pack_dir: Path
+    sheet_counts: dict[str, int]
+    approved_count: int
+
+
+@dataclass(frozen=True)
+class ReviewWorkbookApplySummary:
+    workbook_path: Path
+    review_pack_dir: Path
+    files: dict[str, Path]
     sheet_counts: dict[str, int]
     approved_count: int
 
@@ -1948,6 +1964,172 @@ def _approved_review_count(review_rows_by_key: Mapping[str, Sequence[dict[str, s
     )
 
 
+def _read_review_workbook_sheet(
+    *,
+    workbook: Any,
+    sheet_name: str,
+    required_columns: Sequence[str],
+) -> list[dict[str, str]]:
+    if sheet_name not in workbook.sheetnames:
+        raise ReviewedMappingError(f"Review workbook is missing required sheet: {sheet_name}")
+
+    worksheet = workbook[sheet_name]
+    header_rows = list(worksheet.iter_rows(min_row=1, max_row=1, values_only=True))
+    headers = [clean(value) for value in header_rows[0]] if header_rows else []
+    missing = [column for column in required_columns if column not in headers]
+    if missing:
+        raise ReviewedMappingError(
+            f"Review workbook sheet `{sheet_name}` is missing required column(s): {', '.join(missing)}",
+        )
+
+    duplicate_required_headers = [
+        column
+        for column, count in Counter(header for header in headers if header in required_columns).items()
+        if count > 1
+    ]
+    if duplicate_required_headers:
+        raise ReviewedMappingError(
+            f"Review workbook sheet `{sheet_name}` has duplicate required column(s): "
+            f"{', '.join(duplicate_required_headers)}",
+        )
+
+    header_indexes = {header: index for index, header in enumerate(headers) if header}
+    rows: list[dict[str, str]] = []
+    for row_number, values in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
+        row = {
+            column: clean(values[header_indexes[column]]) if header_indexes[column] < len(values) else ""
+            for column in required_columns
+        }
+        if all(row[column] == "" for column in required_columns):
+            continue
+        row["__csv_rownum__"] = str(row_number)
+        rows.append(row)
+    return rows
+
+
+def _ensure_optional_status_value(
+    row: dict[str, str],
+    *,
+    column: str,
+    allowed_values: set[str],
+    label: str,
+) -> None:
+    value = _normalized_review_value(row.get(column))
+    if value and value not in allowed_values:
+        raise ReviewedMappingError(
+            f"{label} row {_review_csv_row(row)} has invalid {column} `{clean(row.get(column))}`.",
+        )
+
+
+def _validate_client_status_workbook_rows(client_status_rows: Sequence[dict[str, str]]) -> None:
+    approved_statuses: dict[str, str] = {}
+    for row in client_status_rows:
+        status = _ensure_known_review_status(row, "Client Status Review")
+        _ensure_optional_status_value(
+            row,
+            column="suggested_status",
+            allowed_values=CLIENT_STATUS_VALUES,
+            label="Client Status Review",
+        )
+        if status != APPROVED_REVIEW_STATUS:
+            continue
+
+        client_id = clean(row.get("client_id"))
+        suggested_status = _normalized_review_value(row.get("suggested_status"))
+        if not client_id:
+            raise ReviewedMappingError(
+                f"Client Status Review row {_review_csv_row(row)} is approved but lacks client_id.",
+            )
+        if not suggested_status:
+            raise ReviewedMappingError(
+                f"Client Status Review row {_review_csv_row(row)} is approved but lacks suggested_status.",
+            )
+        existing = approved_statuses.get(client_id)
+        if existing and existing != suggested_status:
+            raise ReviewedMappingError(
+                "Client Status Review has conflicting approved statuses for the same Client ID.",
+            )
+        approved_statuses[client_id] = suggested_status
+
+
+def _validate_review_workbook_rows(review_rows_by_key: Mapping[str, Sequence[dict[str, str]]]) -> None:
+    skipped_review_rows: Counter[str] = Counter()
+
+    unresolved_rows = review_rows_by_key.get("unresolved_sites", ())
+    for row in unresolved_rows:
+        _ensure_optional_status_value(
+            row,
+            column="manual_status",
+            allowed_values=SITE_STATUS_VALUES,
+            label="Unresolved Sites",
+        )
+    _approved_unresolved_site_rows(unresolved_rows, skipped_review_rows)
+
+    _validate_client_status_workbook_rows(review_rows_by_key.get("client_status", ()))
+
+    _duplicate_decision_rows(review_rows_by_key.get("duplicate_sites", ()), skipped_review_rows)
+
+    status_default_rows = review_rows_by_key.get("status_defaults", ())
+    for row in status_default_rows:
+        _ensure_optional_status_value(
+            row,
+            column="manual_status",
+            allowed_values=SITE_STATUS_VALUES,
+            label="Status Defaults",
+        )
+    _approved_status_default_rows(status_default_rows, skipped_review_rows)
+
+
+def apply_review_workbook_to_csvs(
+    *,
+    workbook_path: Path,
+    review_pack_dir: Path,
+) -> ReviewWorkbookApplySummary:
+    if not workbook_path.exists():
+        raise ReviewedMappingError(f"Missing review workbook: {workbook_path}")
+    if not workbook_path.is_file():
+        raise ReviewedMappingError(f"Review workbook path is not a file: {workbook_path}")
+
+    try:
+        from openpyxl import load_workbook
+    except ImportError as error:
+        raise RuntimeError(
+            "Reading the Monday mapping review workbook requires openpyxl. "
+            "Install apps/api/requirements.txt first.",
+        ) from error
+
+    try:
+        workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    except Exception as error:
+        raise ReviewedMappingError(f"Could not read review workbook: {workbook_path}") from error
+    try:
+        review_rows_by_key = {
+            key: _read_review_workbook_sheet(
+                workbook=workbook,
+                sheet_name=sheet_name,
+                required_columns=columns,
+            )
+            for key, (sheet_name, columns) in REVIEW_WORKBOOK_APPLY_SHEETS.items()
+        }
+    finally:
+        workbook.close()
+
+    _validate_review_workbook_rows(review_rows_by_key)
+
+    review_paths = _review_file_paths(review_pack_dir)
+    for key, rows in review_rows_by_key.items():
+        _sheet_name, columns = REVIEW_WORKBOOK_APPLY_SHEETS[key]
+        _write_csv(review_paths[key], columns, rows)
+
+    return ReviewWorkbookApplySummary(
+        workbook_path=workbook_path,
+        review_pack_dir=review_pack_dir,
+        files=review_paths,
+        sheet_counts={key: len(rows) for key, rows in review_rows_by_key.items()},
+        approved_count=_approved_review_count(review_rows_by_key),
+    )
+
+
 def _excel_list_formula(values: Sequence[str]) -> str:
     return '"' + ",".join(values) + '"'
 
@@ -2085,7 +2267,7 @@ def _write_instructions_sheet(
         "Review Duplicate Sites and mark keep/skip.",
         "Review Status Defaults and approve or set manual_status.",
         "Save workbook.",
-        "Export/save review tabs back to CSV only if helper supports that.",
+        "Run scripts/apply-monday-review-workbook.ps1 to export tabs back to private CSVs.",
         "Do not import from this workbook directly.",
     ]
     ws.append(["Step", "Instruction"])
@@ -2295,6 +2477,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Write a private Excel review workbook from existing Monday mapping review CSVs.",
     )
     parser.add_argument(
+        "--apply-review-workbook",
+        action="store_true",
+        help="Export Bryce-reviewed workbook tabs back to private review CSVs only.",
+    )
+    parser.add_argument(
         "--review-output-dir",
         type=Path,
         default=repo_root / "import_validation_reports" / "monday_review_pack",
@@ -2331,6 +2518,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     leads_path = args.leads or _default_export_path(export_dir, "leads")
     orders_path = args.orders or _default_export_path(export_dir, "orders")
     sites_path = args.sites or _default_export_path(export_dir, "sites")
+
+    if args.write_review_workbook and args.apply_review_workbook:
+        print("Choose either --write-review-workbook or --apply-review-workbook, not both.", file=sys.stderr)
+        print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+        return 2
+
+    if args.apply_review_workbook:
+        try:
+            workbook_apply_summary = apply_review_workbook_to_csvs(
+                workbook_path=args.review_workbook_path,
+                review_pack_dir=args.review_pack_dir,
+            )
+        except (ReviewedMappingError, RuntimeError) as error:
+            print(f"NOT READY: {error}", file=sys.stderr)
+            print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+            return 2
+
+        print("Applied Monday mapping review workbook to private review CSVs only.")
+        print(f"  Workbook:     {workbook_apply_summary.workbook_path}")
+        print(f"  Review pack:  {workbook_apply_summary.review_pack_dir}")
+        print(f"  Unresolved site rows: {workbook_apply_summary.sheet_counts['unresolved_sites']}")
+        print(f"  Client status rows:   {workbook_apply_summary.sheet_counts['client_status']}")
+        print(f"  Duplicate site rows:  {workbook_apply_summary.sheet_counts['duplicate_sites']}")
+        print(f"  Status default rows:  {workbook_apply_summary.sheet_counts['status_defaults']}")
+        print(f"  Approved rows:        {workbook_apply_summary.approved_count}")
+        print("Safety: no database writes, no imports, no provider calls.")
+        if not args.apply_reviewed_mappings:
+            return 0
 
     if args.write_review_workbook and not args.write_review_pack and not args.apply_reviewed_mappings:
         try:

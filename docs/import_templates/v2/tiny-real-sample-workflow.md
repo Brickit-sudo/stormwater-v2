@@ -265,12 +265,42 @@ Review steps:
 8. Review `Duplicate Sites` and mark keep/skip decisions.
 9. Review `Status Defaults` and approve or set `manual_status`.
 10. Save the workbook.
-11. Export or save review tabs back to the original CSV filenames only after confirming the headers match the review CSVs.
+11. Use the Apply Reviewed Workbook helper to export the workbook decisions back to private review CSVs.
 12. Do not import from this workbook directly.
 
-After workbook review, update/export the review CSVs in `import_validation_reports/monday_review_pack/`, then run the reviewed mapping applier. The current helper writes the workbook only; it intentionally does not write CSVs back from Excel.
+After workbook review, run the Apply Reviewed Workbook helper. It updates the private review CSVs, generates the reviewed private sample, and validates it without importing anything.
 
-## 12. How to apply Bryce-reviewed mappings
+## 12. Apply Reviewed Workbook
+
+Fill the workbook first, then save it.
+
+From the repo root:
+
+```powershell
+cd C:\Users\brolf\Desktop\Stormwater_APP_Clean\stormwater-v2
+.\scripts\apply-monday-review-workbook.ps1
+```
+
+The helper:
+
+- reads `import_validation_reports/monday_review_pack/monday_mapping_review.xlsx`;
+- writes the reviewed tabs back to the private review CSVs in `import_validation_reports/monday_review_pack/`;
+- runs the reviewed mapping applier against explicit approved rows only;
+- validates `docs/import_templates/v2/private/clients_reviewed_sample.csv` and `docs/import_templates/v2/private/sites_reviewed_sample.csv`;
+- prints `READY` or `NOT READY` with paths to the private outputs and validation reports.
+
+No import occurs. The helper does not write the database, run migrations, run the V1 apply path, stage git files, or call Outlook, Gmail, Google Drive, or OpenAI.
+
+Private files remain ignored:
+
+- the workbook,
+- review CSVs under `import_validation_reports/monday_review_pack/`,
+- reviewed sample CSVs under `docs/import_templates/v2/private/`,
+- validation reports under `import_validation_reports/reviewed_sample/`.
+
+If the helper prints `READY`, the next step is a larger reviewed private sample validation. Do not proceed to mass import.
+
+## 13. How to apply Bryce-reviewed mappings
 
 The reviewed mapping applier reads only the private review CSVs and private Monday exports, then writes a new private Clients/Sites validation sample. It still does not import data, write the database, run migrations, run the V1 apply path, or call Outlook, Gmail, Google Drive, or OpenAI.
 
@@ -336,7 +366,7 @@ Do not commit:
 - `docs/import_templates/v2/private/sites_reviewed_sample.csv`
 - anything under `import_validation_reports/reviewed_sample/`
 
-## 13. How to read validator results
+## 14. How to read validator results
 
 Start with the console summary:
 
@@ -350,7 +380,7 @@ Start with the console summary:
 
 Open the Markdown report for exact row numbers and field-level messages.
 
-## 14. Stop conditions
+## 15. Stop conditions
 
 Stop and fix the private CSVs when any of these appear:
 
@@ -367,7 +397,7 @@ Stop and fix the private CSVs when any of these appear:
 
 No orphan Sites. No weak Client mapping. No blind import.
 
-## 15. What files must never be committed
+## 16. What files must never be committed
 
 Never commit:
 
@@ -386,7 +416,7 @@ Never commit:
 
 The committed templates are safe. Private copies and reports are not.
 
-## 16. Next step after clean validation
+## 17. Next step after clean validation
 
 After a clean tiny validation:
 

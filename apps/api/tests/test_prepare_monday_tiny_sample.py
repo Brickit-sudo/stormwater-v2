@@ -14,6 +14,7 @@ from scripts.prepare_monday_tiny_sample import (
     REVIEW_WORKBOOK_SHEETS,
     STATUS_DEFAULTS_REVIEW_COLUMNS,
     UNRESOLVED_SITES_REVIEW_COLUMNS,
+    apply_review_workbook_to_csvs,
     generate_monday_review_pack,
     generate_monday_review_workbook,
     prepare_reviewed_sample,
@@ -159,6 +160,35 @@ def _write_review_pack(
 
 def _validation_formulas(sheet) -> set[str]:
     return {validation.formula1 for validation in sheet.data_validations.dataValidation}
+
+
+def _set_workbook_row_values(
+    workbook_path: Path,
+    *,
+    sheet_name: str,
+    match_column: str,
+    match_value: str,
+    updates: dict[str, str],
+) -> None:
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_path)
+    try:
+        sheet = workbook[sheet_name]
+        headers = {str(cell.value): index for index, cell in enumerate(sheet[1], start=1)}
+        row_index = None
+        for candidate_index in range(2, sheet.max_row + 1):
+            value = sheet.cell(candidate_index, headers[match_column]).value
+            if str(value or "") == match_value:
+                row_index = candidate_index
+                break
+        if row_index is None:
+            raise AssertionError(f"Workbook row not found in {sheet_name}: {match_column}={match_value}")
+        for column, value in updates.items():
+            sheet.cell(row_index, headers[column]).value = value
+        workbook.save(workbook_path)
+    finally:
+        workbook.close()
 
 
 def _prepare_reviewed_sample(tmp_path: Path, exports: dict[str, Path], review_dir: Path):
@@ -538,6 +568,198 @@ def test_generate_review_workbook_writes_expected_sheets_and_dropdowns(tmp_path:
         workbook.close()
 
 
+def test_apply_review_workbook_writes_review_csvs(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Unresolved Sites",
+        match_column="source_row_number",
+        match_value="5",
+        updates={"manual_client_external_id": "client-good", "review_status": "approved"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Client Status Review",
+        match_column="source_row_number",
+        match_value="4",
+        updates={"suggested_status": "prospect", "review_status": "approved"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Status Defaults",
+        match_column="source_row_number",
+        match_value="3",
+        updates={"manual_status": "active", "review_status": "approved"},
+    )
+
+    applied_dir = tmp_path / "applied_reviews"
+    summary = apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=applied_dir)
+
+    assert summary.review_pack_dir == applied_dir
+    assert summary.sheet_counts == {
+        "unresolved_sites": 4,
+        "client_status": 1,
+        "duplicate_sites": 2,
+        "status_defaults": 1,
+    }
+    assert summary.approved_count == 3
+    assert all(path.exists() for path in summary.files.values())
+
+    unresolved = _read_csv(applied_dir / "unresolved_sites_review.csv")
+    assert unresolved[0]["manual_client_external_id"] == "client-good"
+    assert unresolved[0]["review_status"] == "approved"
+    client_status = _read_csv(applied_dir / "client_status_review.csv")
+    assert client_status[0]["suggested_status"] == "prospect"
+    status_defaults = _read_csv(applied_dir / "status_defaults_review.csv")
+    assert status_defaults[0]["manual_status"] == "active"
+    duplicates = _read_csv(applied_dir / "duplicate_sites_review.csv")
+    assert {row["keep_or_skip"] for row in duplicates} == {"skip"}
+
+
+def test_apply_review_workbook_blank_review_status_is_not_approved(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Unresolved Sites",
+        match_column="source_row_number",
+        match_value="5",
+        updates={"manual_client_external_id": "client-good"},
+    )
+
+    applied_dir = tmp_path / "applied_reviews"
+    summary = apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=applied_dir)
+    unresolved = _read_csv(applied_dir / "unresolved_sites_review.csv")
+
+    assert summary.approved_count == 0
+    assert unresolved[0]["manual_client_external_id"] == "client-good"
+    assert unresolved[0]["review_status"] == ""
+
+
+def test_apply_review_workbook_fails_on_invalid_review_status(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Unresolved Sites",
+        match_column="source_row_number",
+        match_value="5",
+        updates={"review_status": "yes"},
+    )
+
+    with pytest.raises(ValueError, match="unsupported review_status"):
+        apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=tmp_path / "applied_reviews")
+
+
+def test_apply_review_workbook_fails_on_missing_required_sheet(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_path)
+    try:
+        del workbook["Status Defaults"]
+        workbook.save(workbook_path)
+    finally:
+        workbook.close()
+
+    with pytest.raises(ValueError, match="missing required sheet: Status Defaults"):
+        apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=tmp_path / "applied_reviews")
+
+
+def test_apply_review_workbook_fails_on_missing_required_columns(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_path)
+    try:
+        workbook["Unresolved Sites"].delete_cols(1)
+        workbook.save(workbook_path)
+    finally:
+        workbook.close()
+
+    with pytest.raises(ValueError, match="missing required column"):
+        apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=tmp_path / "applied_reviews")
+
+
+def test_apply_review_workbook_fails_on_invalid_status_values(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Status Defaults",
+        match_column="source_row_number",
+        match_value="3",
+        updates={"manual_status": "maybe", "review_status": "approved"},
+    )
+
+    with pytest.raises(ValueError, match="invalid manual_status"):
+        apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=tmp_path / "applied_reviews")
+
+
+def test_apply_review_workbook_fails_on_blank_duplicate_decision(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Duplicate Sites",
+        match_column="source_row_number",
+        match_value="9",
+        updates={"keep_or_skip": ""},
+    )
+
+    with pytest.raises(ValueError, match="no clear keep/skip/needs_source_fix decision"):
+        apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=tmp_path / "applied_reviews")
+
+
+def test_apply_review_workbook_approved_rows_are_applied_and_validate(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Unresolved Sites",
+        match_column="source_row_number",
+        match_value="5",
+        updates={"manual_client_external_id": "client-good", "review_status": "approved"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Unresolved Sites",
+        match_column="source_row_number",
+        match_value="6",
+        updates={"manual_client_external_id": "client-unmapped", "review_status": "approved"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Client Status Review",
+        match_column="source_row_number",
+        match_value="4",
+        updates={"suggested_status": "prospect", "review_status": "approved"},
+    )
+
+    apply_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=review_dir)
+    summary = _prepare_reviewed_sample(tmp_path, exports, review_dir)
+
+    assert summary.clients_written == 2
+    assert summary.sites_written == 2
+    assert summary.validation_ready is True
+    validation = validate_import_templates(clients=summary.clients_path, sites=summary.sites_path)
+    assert validation["ready"] is True
+
+
 def test_prepare_reviewed_sample_applies_approved_mappings_and_validates(tmp_path: Path) -> None:
     exports = _fake_review_exports(tmp_path)
     review_dir = _write_review_pack(
@@ -847,3 +1069,45 @@ def test_generate_review_workbook_does_not_open_db_or_network(tmp_path: Path, mo
     )
 
     assert list(tmp_path.rglob("*.db")) == []
+
+
+def test_apply_review_workbook_does_not_open_db_or_network(tmp_path: Path, monkeypatch) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+    generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+
+    def fail_sqlite_connect(*_args, **_kwargs):
+        raise AssertionError("review workbook application must not open a database")
+
+    def fail_socket_connect(*_args, **_kwargs):
+        raise AssertionError("review workbook application must not open a network connection")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_sqlite_connect)
+    monkeypatch.setattr(socket, "create_connection", fail_socket_connect)
+
+    apply_review_workbook_to_csvs(
+        workbook_path=workbook_path,
+        review_pack_dir=tmp_path / "applied_reviews",
+    )
+
+    assert list(tmp_path.rglob("*.db")) == []
+
+
+def test_apply_monday_review_workbook_helper_is_static_safe() -> None:
+    script_path = REPO_ROOT / "scripts" / "apply-monday-review-workbook.ps1"
+    assert script_path.exists()
+    script_text = script_path.read_text(encoding="utf-8").casefold()
+
+    forbidden_snippets = (
+        "git add",
+        "git commit",
+        "migrate_v1",
+        "alembic upgrade",
+        "seed_dev.py",
+        "outlook",
+        "gmail",
+        "google",
+        "openai",
+    )
+    for snippet in forbidden_snippets:
+        assert snippet not in script_text
