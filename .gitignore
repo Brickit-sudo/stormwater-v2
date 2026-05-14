@@ -31,6 +31,13 @@ logs/
 *.log
 *.pid
 .v2-demo/
+.review/
+.codex/
+codex-*.diff
+codex-*.txt
+codex-handoff.ps1
+codex-feedback.ps1
+review-notes.md
 
 # V1 migration private/generated artifacts
 apps/api/migration_maps/*.csv
