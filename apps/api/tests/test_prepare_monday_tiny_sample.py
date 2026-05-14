@@ -9,12 +9,15 @@ from pathlib import Path
 import pytest
 
 from scripts.prepare_monday_tiny_sample import (
+    ASSISTED_REVIEW_WORKBOOK_SHEETS,
     CLIENT_STATUS_REVIEW_COLUMNS,
     DUPLICATE_SITES_REVIEW_COLUMNS,
     REVIEW_WORKBOOK_SHEETS,
     STATUS_DEFAULTS_REVIEW_COLUMNS,
     UNRESOLVED_SITES_REVIEW_COLUMNS,
+    apply_assisted_review_workbook_to_csvs,
     apply_review_workbook_to_csvs,
+    generate_monday_assisted_review_workbook,
     generate_monday_review_pack,
     generate_monday_review_workbook,
     prepare_reviewed_sample,
@@ -187,6 +190,27 @@ def _set_workbook_row_values(
         for column, value in updates.items():
             sheet.cell(row_index, headers[column]).value = value
         workbook.save(workbook_path)
+    finally:
+        workbook.close()
+
+
+def _workbook_sheet_rows(workbook_path: Path, sheet_name: str) -> list[dict[str, str]]:
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_path, data_only=True)
+    try:
+        sheet = workbook[sheet_name]
+        headers = [str(cell.value or "") for cell in sheet[1]]
+        rows = []
+        for values in sheet.iter_rows(min_row=2, values_only=True):
+            row = {
+                header: "" if value is None else str(value)
+                for header, value in zip(headers, values, strict=False)
+                if header
+            }
+            if any(row.values()):
+                rows.append(row)
+        return rows
     finally:
         workbook.close()
 
@@ -457,6 +481,290 @@ def test_generate_review_pack_writes_private_review_files_and_bucket_counts(tmp_
     assert "| Site IDs not found in Leads | 1 |" in readme
     assert "| duplicate Site ID rows | 2 |" in readme
     assert "no database writes, no provider calls" in readme
+
+
+def test_generate_assisted_review_workbook_groups_decisions_and_keeps_blanks(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-a",
+                site_name_or_label="Alpha Site",
+                client_id="client-unmapped",
+                client_candidate="Beta LLC",
+                exclusion_reason="linked_client_unmapped_client_status",
+                diagnostic_bucket="linked to clients with unmapped client status",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="6",
+                site_id="site-b",
+                site_name_or_label="Bravo Site",
+                client_id="client-unmapped",
+                client_candidate="Beta LLC",
+                exclusion_reason="linked_client_unmapped_client_status",
+                diagnostic_bucket="linked to clients with unmapped client status",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="7",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                exclusion_reason="site_has_no_client_id",
+                diagnostic_bucket="sites with no Client ID",
+            ),
+        ],
+        client_status_rows=[
+            _review_row(
+                CLIENT_STATUS_REVIEW_COLUMNS,
+                source_row_number="4",
+                client_id="client-unmapped",
+                client_name_or_label="Beta LLC",
+                raw_client_status="Needs Review",
+            ),
+            _review_row(
+                CLIENT_STATUS_REVIEW_COLUMNS,
+                source_row_number="5",
+                client_id="client-other",
+                client_name_or_label="Beta LLC",
+                raw_client_status="Needs Review",
+            ),
+        ],
+        duplicate_rows=[
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="9",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site A",
+                duplicate_group="site_id:site-dup",
+            ),
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="10",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site B",
+                duplicate_group="site_id:site-dup",
+            ),
+        ],
+        status_default_rows=[
+            _review_row(
+                STATUS_DEFAULTS_REVIEW_COLUMNS,
+                source_row_number="11",
+                site_id="site-blank-status",
+                site_name_or_label="Blank Status Site",
+                raw_site_status="<blank>",
+                defaulted_status="active",
+            ),
+            _review_row(
+                STATUS_DEFAULTS_REVIEW_COLUMNS,
+                source_row_number="12",
+                site_id="site-active-status",
+                site_name_or_label="Active Status Site",
+                raw_site_status="Active",
+                defaulted_status="active",
+            ),
+        ],
+    )
+    workbook_path = tmp_path / "reviews" / "monday_mapping_assisted_review.xlsx"
+
+    summary = generate_monday_assisted_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+
+    assert summary.workbook_path == workbook_path
+    assert summary.source_row_counts == {
+        "unresolved_sites": 3,
+        "client_status": 2,
+        "duplicate_sites": 2,
+        "status_defaults": 2,
+    }
+    assert summary.sheet_counts["client_mapping"] == 2
+    assert summary.sheet_counts["status_mapping"] == 3
+    assert summary.sheet_counts["duplicate_sites"] == 1
+    assert summary.approved_count == 0
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_path)
+    try:
+        assert workbook.sheetnames == list(ASSISTED_REVIEW_WORKBOOK_SHEETS)
+    finally:
+        workbook.close()
+
+    client_decisions = _workbook_sheet_rows(workbook_path, "Client Mapping Decisions")
+    repeated_client = next(row for row in client_decisions if row["client_id"] == "client-unmapped")
+    assert repeated_client["site_count"] == "2"
+    assert repeated_client["suggested_client_external_id"] == "client-unmapped"
+    assert repeated_client["suggestion_confidence"] == "high"
+    assert repeated_client["manual_client_external_id"] == ""
+    assert repeated_client["review_status"] == ""
+
+    status_decisions = _workbook_sheet_rows(workbook_path, "Status Mapping Decisions")
+    needs_review = next(row for row in status_decisions if row["raw_status"] == "Needs Review")
+    assert needs_review["affected_count"] == "2"
+    assert needs_review["suggested_v2_status"] == ""
+    assert needs_review["review_status"] == ""
+    blank_status = next(row for row in status_decisions if row["raw_status"] == "<blank>")
+    assert blank_status["suggested_v2_status"] == ""
+    assert "Low confidence" in blank_status["suggestion_reason"]
+    assert blank_status["review_status"] == ""
+    active_status = next(row for row in status_decisions if row["raw_status"] == "Active")
+    assert active_status["suggested_v2_status"] == "active"
+    assert active_status["review_status"] == ""
+
+    duplicate_decisions = _workbook_sheet_rows(workbook_path, "Duplicate Site Decisions")
+    assert duplicate_decisions[0]["site_id"] == "site-dup"
+    assert duplicate_decisions[0]["duplicate_count"] == "2"
+    assert duplicate_decisions[0]["review_status"] == ""
+
+
+def test_apply_assisted_review_workbook_refuses_blank_decisions(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+    workbook_path = tmp_path / "reviews" / "monday_mapping_assisted_review.xlsx"
+    generate_monday_assisted_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+
+    with pytest.raises(ValueError, match="blank review_status"):
+        apply_assisted_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=review_dir)
+
+
+def test_apply_assisted_review_workbook_updates_review_csvs_for_explicit_decisions(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-a",
+                site_name_or_label="Alpha Site",
+                client_id="client-unmapped",
+                client_candidate="Beta LLC",
+                exclusion_reason="linked_client_unmapped_client_status",
+                diagnostic_bucket="linked to clients with unmapped client status",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="6",
+                site_id="site-b",
+                site_name_or_label="Bravo Site",
+                client_id="client-unmapped",
+                client_candidate="Beta LLC",
+                exclusion_reason="linked_client_unmapped_client_status",
+                diagnostic_bucket="linked to clients with unmapped client status",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="7",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                exclusion_reason="site_has_no_client_id",
+                diagnostic_bucket="sites with no Client ID",
+            ),
+        ],
+        client_status_rows=[
+            _review_row(
+                CLIENT_STATUS_REVIEW_COLUMNS,
+                source_row_number="4",
+                client_id="client-unmapped",
+                client_name_or_label="Beta LLC",
+                raw_client_status="Needs Review",
+            ),
+            _review_row(
+                CLIENT_STATUS_REVIEW_COLUMNS,
+                source_row_number="5",
+                client_id="client-other",
+                client_name_or_label="Other LLC",
+                raw_client_status="Needs Review",
+            ),
+        ],
+        duplicate_rows=[
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="9",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site A",
+                duplicate_group="site_id:site-dup",
+            ),
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="10",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site B",
+                duplicate_group="site_id:site-dup",
+            ),
+        ],
+        status_default_rows=[
+            _review_row(
+                STATUS_DEFAULTS_REVIEW_COLUMNS,
+                source_row_number="11",
+                site_id="site-blank-status",
+                site_name_or_label="Blank Status Site",
+                raw_site_status="<blank>",
+                defaulted_status="active",
+            ),
+        ],
+    )
+    workbook_path = tmp_path / "reviews" / "monday_mapping_assisted_review.xlsx"
+    generate_monday_assisted_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Client Mapping Decisions",
+        match_column="decision_id",
+        match_value="client_map_0001",
+        updates={"review_status": "approved"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Client Mapping Decisions",
+        match_column="decision_id",
+        match_value="client_map_0002",
+        updates={"review_status": "needs_followup"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Status Mapping Decisions",
+        match_column="decision_id",
+        match_value="status_map_0001",
+        updates={"manual_status": "prospect", "review_status": "approved"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Status Mapping Decisions",
+        match_column="decision_id",
+        match_value="status_map_0002",
+        updates={"manual_status": "active", "review_status": "approved"},
+    )
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Duplicate Site Decisions",
+        match_column="decision_id",
+        match_value="duplicate_site_0001",
+        updates={"review_status": "skip"},
+    )
+
+    summary = apply_assisted_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=review_dir)
+
+    assert summary.applied_counts == {
+        "client_mapping": 3,
+        "status_mapping": 3,
+        "duplicate_sites": 2,
+    }
+    unresolved = _read_csv(review_dir / "unresolved_sites_review.csv")
+    approved_rows = [row for row in unresolved if row["review_status"] == "approved"]
+    assert len(approved_rows) == 2
+    assert {row["manual_client_external_id"] for row in approved_rows} == {"client-unmapped"}
+    assert unresolved[2]["review_status"] == "needs_followup"
+
+    client_status = _read_csv(review_dir / "client_status_review.csv")
+    assert {row["suggested_status"] for row in client_status} == {"prospect"}
+    assert {row["review_status"] for row in client_status} == {"approved"}
+
+    status_defaults = _read_csv(review_dir / "status_defaults_review.csv")
+    assert status_defaults[0]["manual_status"] == "active"
+    assert status_defaults[0]["review_status"] == "approved"
+
+    duplicates = _read_csv(review_dir / "duplicate_sites_review.csv")
+    assert {row["keep_or_skip"] for row in duplicates} == {"skip"}
 
 
 def test_generate_review_workbook_writes_expected_sheets_and_dropdowns(tmp_path: Path) -> None:
@@ -1093,6 +1401,67 @@ def test_apply_review_workbook_does_not_open_db_or_network(tmp_path: Path, monke
     assert list(tmp_path.rglob("*.db")) == []
 
 
+def test_generate_assisted_review_workbook_does_not_open_db_or_network(tmp_path: Path, monkeypatch) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+
+    def fail_sqlite_connect(*_args, **_kwargs):
+        raise AssertionError("assisted review workbook generation must not open a database")
+
+    def fail_socket_connect(*_args, **_kwargs):
+        raise AssertionError("assisted review workbook generation must not open a network connection")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_sqlite_connect)
+    monkeypatch.setattr(socket, "create_connection", fail_socket_connect)
+
+    generate_monday_assisted_review_workbook(
+        review_pack_dir=review_dir,
+        workbook_path=tmp_path / "reviews" / "monday_mapping_assisted_review.xlsx",
+    )
+
+    assert list(tmp_path.rglob("*.db")) == []
+
+
+def test_apply_assisted_review_workbook_does_not_open_db_or_network(tmp_path: Path, monkeypatch) -> None:
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                exclusion_reason="site_has_no_client_id",
+                diagnostic_bucket="sites with no Client ID",
+            ),
+        ],
+        client_status_rows=[],
+        duplicate_rows=[],
+        status_default_rows=[],
+    )
+    workbook_path = tmp_path / "reviews" / "monday_mapping_assisted_review.xlsx"
+    generate_monday_assisted_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+    _set_workbook_row_values(
+        workbook_path,
+        sheet_name="Client Mapping Decisions",
+        match_column="decision_id",
+        match_value="client_map_0001",
+        updates={"review_status": "needs_followup"},
+    )
+
+    def fail_sqlite_connect(*_args, **_kwargs):
+        raise AssertionError("assisted review workbook application must not open a database")
+
+    def fail_socket_connect(*_args, **_kwargs):
+        raise AssertionError("assisted review workbook application must not open a network connection")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_sqlite_connect)
+    monkeypatch.setattr(socket, "create_connection", fail_socket_connect)
+
+    apply_assisted_review_workbook_to_csvs(workbook_path=workbook_path, review_pack_dir=review_dir)
+
+    assert list(tmp_path.rglob("*.db")) == []
+
+
 def test_apply_monday_review_workbook_helper_is_static_safe() -> None:
     script_path = REPO_ROOT / "scripts" / "apply-monday-review-workbook.ps1"
     assert script_path.exists()
@@ -1111,3 +1480,26 @@ def test_apply_monday_review_workbook_helper_is_static_safe() -> None:
     )
     for snippet in forbidden_snippets:
         assert snippet not in script_text
+
+
+def test_assisted_monday_review_helpers_are_static_safe() -> None:
+    script_paths = [
+        REPO_ROOT / "scripts" / "create-assisted-monday-review.ps1",
+        REPO_ROOT / "scripts" / "apply-assisted-monday-review.ps1",
+    ]
+    forbidden_snippets = (
+        "git add",
+        "git commit",
+        "migrate_v1",
+        "alembic upgrade",
+        "seed_dev.py",
+        "outlook",
+        "gmail",
+        "google",
+        "openai",
+    )
+    for script_path in script_paths:
+        assert script_path.exists()
+        script_text = script_path.read_text(encoding="utf-8").casefold()
+        for snippet in forbidden_snippets:
+            assert snippet not in script_text

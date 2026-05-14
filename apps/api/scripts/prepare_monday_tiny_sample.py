@@ -127,6 +127,80 @@ REVIEW_WORKBOOK_APPLY_SHEETS = {
     "status_defaults": ("Status Defaults", STATUS_DEFAULTS_REVIEW_COLUMNS),
 }
 
+ASSISTED_REVIEW_WORKBOOK_SHEETS = (
+    "Start Here",
+    "Decision Summary",
+    "Client Mapping Decisions",
+    "Status Mapping Decisions",
+    "Duplicate Site Decisions",
+    "Site Rows Preview",
+    "Instructions",
+)
+
+ASSISTED_CLIENT_MAPPING_COLUMNS = (
+    "decision_id",
+    "diagnostic_bucket",
+    "client_id",
+    "client_candidate",
+    "site_count",
+    "sample_site_labels",
+    "suggested_client_external_id",
+    "suggestion_confidence",
+    "reason_for_suggestion",
+    "manual_client_external_id",
+    "manual_status",
+    "review_status",
+    "notes",
+)
+
+ASSISTED_STATUS_MAPPING_COLUMNS = (
+    "decision_id",
+    "status_scope",
+    "raw_status",
+    "affected_count",
+    "suggested_v2_status",
+    "suggestion_reason",
+    "manual_status",
+    "review_status",
+    "notes",
+)
+
+ASSISTED_DUPLICATE_SITE_COLUMNS = (
+    "decision_id",
+    "site_id",
+    "duplicate_count",
+    "sample_site_labels",
+    "suggested_action",
+    "keep_or_skip",
+    "review_status",
+    "notes",
+)
+
+ASSISTED_SITE_ROWS_PREVIEW_COLUMNS = (
+    "decision_id",
+    "source_row_number",
+    "site_id",
+    "site_name_or_label",
+    "client_id",
+    "client_candidate",
+    "exclusion_reason",
+    "diagnostic_bucket",
+    "suggested_client_external_id",
+    "manual_client_external_id",
+    "manual_status",
+    "review_status",
+    "notes",
+)
+
+ASSISTED_WORKBOOK_APPLY_SHEETS = {
+    "client_mapping": ("Client Mapping Decisions", ASSISTED_CLIENT_MAPPING_COLUMNS),
+    "status_mapping": ("Status Mapping Decisions", ASSISTED_STATUS_MAPPING_COLUMNS),
+    "duplicate_sites": ("Duplicate Site Decisions", ASSISTED_DUPLICATE_SITE_COLUMNS),
+    "site_rows_preview": ("Site Rows Preview", ASSISTED_SITE_ROWS_PREVIEW_COLUMNS),
+}
+
+STATUS_DECISION_DROPDOWN_VALUES = ("active", "inactive", "on_hold", "archived", "prospect")
+
 SITE_REVIEW_BUCKET_LABELS = {
     "site_id_not_found_in_leads": "Site IDs not found in Leads",
     "site_has_no_client_id": "sites with no Client ID",
@@ -227,6 +301,25 @@ class ReviewWorkbookApplySummary:
     review_pack_dir: Path
     files: dict[str, Path]
     sheet_counts: dict[str, int]
+    approved_count: int
+
+
+@dataclass(frozen=True)
+class AssistedReviewWorkbookSummary:
+    workbook_path: Path
+    source_review_pack_dir: Path
+    sheet_counts: dict[str, int]
+    source_row_counts: dict[str, int]
+    approved_count: int
+
+
+@dataclass(frozen=True)
+class AssistedReviewWorkbookApplySummary:
+    workbook_path: Path
+    review_pack_dir: Path
+    files: dict[str, Path]
+    sheet_counts: dict[str, int]
+    applied_counts: dict[str, int]
     approved_count: int
 
 
@@ -2130,6 +2223,855 @@ def apply_review_workbook_to_csvs(
     )
 
 
+def _read_review_pack_rows(review_pack_dir: Path) -> dict[str, list[dict[str, str]]]:
+    review_paths = _review_file_paths(review_pack_dir)
+    return {
+        "unresolved_sites": _read_review_csv(
+            review_paths["unresolved_sites"],
+            UNRESOLVED_SITES_REVIEW_COLUMNS,
+            "unresolved_sites_review.csv",
+        ),
+        "client_status": _read_review_csv(
+            review_paths["client_status"],
+            CLIENT_STATUS_REVIEW_COLUMNS,
+            "client_status_review.csv",
+        ),
+        "duplicate_sites": _read_review_csv(
+            review_paths["duplicate_sites"],
+            DUPLICATE_SITES_REVIEW_COLUMNS,
+            "duplicate_sites_review.csv",
+        ),
+        "status_defaults": _read_review_csv(
+            review_paths["status_defaults"],
+            STATUS_DEFAULTS_REVIEW_COLUMNS,
+            "status_defaults_review.csv",
+        ),
+    }
+
+
+def _shared_if_all(rows: Sequence[dict[str, str]], column: str) -> str:
+    values = [clean(row.get(column)) for row in rows]
+    unique_values = set(values)
+    return values[0] if len(unique_values) == 1 else ""
+
+
+def _sample_values(values: Sequence[str], *, limit: int = 5) -> str:
+    unique_values = [value for value in dict.fromkeys(clean(value) for value in values) if value]
+    if not unique_values:
+        return ""
+    sample = unique_values[:limit]
+    remainder = len(unique_values) - len(sample)
+    if remainder > 0:
+        sample.append(f"... (+{remainder} more)")
+    return " | ".join(sample)
+
+
+def _client_mapping_group_key(row: dict[str, str]) -> tuple[str, str, str, str]:
+    diagnostic_bucket = clean(row.get("diagnostic_bucket")) or _site_review_bucket(clean(row.get("exclusion_reason")))
+    client_id = clean(row.get("client_id"))
+    if client_id:
+        return (diagnostic_bucket, "client_id", client_id, _normalized_name(row.get("client_candidate")))
+
+    site_id = clean(row.get("site_id"))
+    if site_id:
+        return (diagnostic_bucket, "site_id", site_id, "")
+
+    return (diagnostic_bucket, "source_row", clean(row.get("source_row_number")), "")
+
+
+def _prior_approved_candidate_mappings(rows: Sequence[dict[str, str]]) -> dict[str, str]:
+    mappings: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        if _review_status(row) != APPROVED_REVIEW_STATUS:
+            continue
+        candidate = _normalized_name(row.get("client_candidate"))
+        manual_client = clean(row.get("manual_client_external_id"))
+        if candidate and manual_client:
+            mappings[candidate].add(manual_client)
+    return {candidate: next(iter(values)) for candidate, values in mappings.items() if len(values) == 1}
+
+
+def _suggest_client_external_id(
+    rows: Sequence[dict[str, str]],
+    *,
+    prior_candidate_mappings: Mapping[str, str],
+) -> tuple[str, str, str]:
+    client_ids = {clean(row.get("client_id")) for row in rows if clean(row.get("client_id"))}
+    reasons = {clean(row.get("exclusion_reason")) for row in rows if clean(row.get("exclusion_reason"))}
+    candidates = {_normalized_name(row.get("client_candidate")) for row in rows if _normalized_name(row.get("client_candidate"))}
+
+    if len(client_ids) == 1 and reasons == {"linked_client_unmapped_client_status"}:
+        client_id = next(iter(client_ids))
+        return (
+            client_id,
+            "high",
+            "Exact Client ID link is present; the separate client status decision still requires Bryce review.",
+        )
+
+    if len(candidates) == 1:
+        candidate = next(iter(candidates))
+        suggested = prior_candidate_mappings.get(candidate, "")
+        if suggested:
+            return (
+                suggested,
+                "high",
+                "Exact client candidate match to a prior Bryce-approved manual mapping.",
+            )
+
+    if len(client_ids) == 1:
+        reason = next(iter(reasons), "")
+        if reason == "linked_client_ambiguous_account_name":
+            return (
+                "",
+                "medium",
+                "Exact Client ID exists, but the client account name is ambiguous and must be resolved by Bryce.",
+            )
+        return ("", "none", "No safe exact client suggestion for this grouped decision.")
+
+    return ("", "none", "No exact Client ID or prior approved candidate match was found.")
+
+
+def _client_decision_rows(
+    unresolved_rows: Sequence[dict[str, str]],
+) -> tuple[list[dict[str, str]], dict[str, str]]:
+    grouped: dict[tuple[str, str, str, str], list[dict[str, str]]] = {}
+    for row in unresolved_rows:
+        grouped.setdefault(_client_mapping_group_key(row), []).append(row)
+
+    prior_candidate_mappings = _prior_approved_candidate_mappings(unresolved_rows)
+    decision_rows = []
+    decision_id_by_source_row: dict[str, str] = {}
+    for index, (_key, rows) in enumerate(grouped.items(), start=1):
+        decision_id = f"client_map_{index:04d}"
+        suggested_client, confidence, reason = _suggest_client_external_id(
+            rows,
+            prior_candidate_mappings=prior_candidate_mappings,
+        )
+        for row in rows:
+            source_row = clean(row.get("source_row_number"))
+            if source_row:
+                decision_id_by_source_row[source_row] = decision_id
+
+        manual_client = _shared_if_all(rows, "manual_client_external_id")
+        manual_status = _shared_if_all(rows, "manual_status")
+        review_status = _shared_if_all(rows, "review_status")
+        notes = _shared_if_all(rows, "notes")
+        decision_rows.append(
+            {
+                "decision_id": decision_id,
+                "diagnostic_bucket": clean(rows[0].get("diagnostic_bucket")),
+                "client_id": _shared_if_all(rows, "client_id"),
+                "client_candidate": _shared_if_all(rows, "client_candidate"),
+                "site_count": str(len(rows)),
+                "sample_site_labels": _sample_values([row.get("site_name_or_label", "") for row in rows]),
+                "suggested_client_external_id": suggested_client if confidence == "high" else "",
+                "suggestion_confidence": confidence,
+                "reason_for_suggestion": reason,
+                "manual_client_external_id": manual_client,
+                "manual_status": manual_status,
+                "review_status": review_status,
+                "notes": notes,
+            },
+        )
+    return decision_rows, decision_id_by_source_row
+
+
+def _status_decision_key(scope: str, raw_status: str) -> tuple[str, str]:
+    return (scope, clean(raw_status) or "<blank>")
+
+
+def _suggest_status_mapping(scope: str, raw_status: str) -> tuple[str, str]:
+    raw = clean(raw_status)
+    if not raw or raw.casefold() in {"<blank>", "blank"}:
+        if scope == "site":
+            return (
+                "",
+                "Low confidence: blank site status defaulted to active for validation only. Bryce must fill manual_status.",
+            )
+        return ("", "No safe exact status mapping for a blank client status.")
+
+    direct_site_mappings = {
+        "active": "active",
+        "inactive": "inactive",
+        "on hold": "on_hold",
+        "onhold": "on_hold",
+        "archived": "archived",
+        "archive": "archived",
+    }
+    suggested = direct_site_mappings.get(_status_key(raw))
+    if not suggested:
+        return ("", "No exact status mapping; Bryce review required.")
+
+    if scope == "client" and suggested not in CLIENT_STATUS_VALUES:
+        return ("", f"`{suggested}` is not a V2 client status; Bryce review required.")
+    return (suggested, "High confidence exact status mapping. Bryce must still set review_status before apply.")
+
+
+def _status_decision_rows(
+    *,
+    client_status_rows: Sequence[dict[str, str]],
+    status_default_rows: Sequence[dict[str, str]],
+) -> list[dict[str, str]]:
+    grouped: dict[tuple[str, str], list[dict[str, str]]] = {}
+    for row in client_status_rows:
+        grouped.setdefault(_status_decision_key("client", row.get("raw_client_status", "")), []).append(row)
+    for row in status_default_rows:
+        grouped.setdefault(_status_decision_key("site", row.get("raw_site_status", "")), []).append(row)
+
+    decision_rows = []
+    for index, ((scope, raw_status), rows) in enumerate(grouped.items(), start=1):
+        suggested_status, reason = _suggest_status_mapping(scope, raw_status)
+        manual_column = "suggested_status" if scope == "client" else "manual_status"
+        decision_rows.append(
+            {
+                "decision_id": f"status_map_{index:04d}",
+                "status_scope": scope,
+                "raw_status": raw_status,
+                "affected_count": str(len(rows)),
+                "suggested_v2_status": suggested_status,
+                "suggestion_reason": reason,
+                "manual_status": _shared_if_all(rows, manual_column),
+                "review_status": _shared_if_all(rows, "review_status"),
+                "notes": _shared_if_all(rows, "notes"),
+            },
+        )
+    return decision_rows
+
+
+def _duplicate_decision_rows_for_assisted(duplicate_rows: Sequence[dict[str, str]]) -> list[dict[str, str]]:
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for row in duplicate_rows:
+        site_id = clean(row.get("site_id"))
+        group_key = site_id or clean(row.get("duplicate_group")) or clean(row.get("source_row_number"))
+        grouped.setdefault(group_key, []).append(row)
+
+    decision_rows = []
+    for index, (site_id, rows) in enumerate(grouped.items(), start=1):
+        decision_rows.append(
+            {
+                "decision_id": f"duplicate_site_{index:04d}",
+                "site_id": site_id,
+                "duplicate_count": str(len(rows)),
+                "sample_site_labels": _sample_values([row.get("site_name_or_label", "") for row in rows]),
+                "suggested_action": (
+                    "Resolve the duplicate source rows. Bulk apply can mark all rows skip or needs_source_fix; "
+                    "choosing one keep still requires detailed row-level review."
+                ),
+                "keep_or_skip": _shared_if_all(rows, "keep_or_skip"),
+                "review_status": "",
+                "notes": _shared_if_all(rows, "notes"),
+            },
+        )
+    return decision_rows
+
+
+def _site_preview_rows(
+    unresolved_rows: Sequence[dict[str, str]],
+    *,
+    decision_id_by_source_row: Mapping[str, str],
+    decision_rows_by_id: Mapping[str, dict[str, str]],
+) -> list[dict[str, str]]:
+    preview_rows = []
+    for row in unresolved_rows:
+        source_row = clean(row.get("source_row_number"))
+        decision_id = decision_id_by_source_row.get(source_row, "")
+        decision_row = decision_rows_by_id.get(decision_id, {})
+        preview_rows.append(
+            {
+                "decision_id": decision_id,
+                "source_row_number": source_row,
+                "site_id": clean(row.get("site_id")),
+                "site_name_or_label": clean(row.get("site_name_or_label")),
+                "client_id": clean(row.get("client_id")),
+                "client_candidate": clean(row.get("client_candidate")),
+                "exclusion_reason": clean(row.get("exclusion_reason")),
+                "diagnostic_bucket": clean(row.get("diagnostic_bucket")),
+                "suggested_client_external_id": clean(decision_row.get("suggested_client_external_id")),
+                "manual_client_external_id": clean(row.get("manual_client_external_id")),
+                "manual_status": clean(row.get("manual_status")),
+                "review_status": clean(row.get("review_status")),
+                "notes": clean(row.get("notes")),
+            },
+        )
+    return preview_rows
+
+
+def _assisted_workbook_rows(
+    review_rows_by_key: Mapping[str, Sequence[dict[str, str]]],
+) -> dict[str, list[dict[str, str]]]:
+    client_rows, decision_id_by_source_row = _client_decision_rows(review_rows_by_key.get("unresolved_sites", ()))
+    client_rows_by_id = {row["decision_id"]: row for row in client_rows}
+    status_rows = _status_decision_rows(
+        client_status_rows=review_rows_by_key.get("client_status", ()),
+        status_default_rows=review_rows_by_key.get("status_defaults", ()),
+    )
+    duplicate_rows = _duplicate_decision_rows_for_assisted(review_rows_by_key.get("duplicate_sites", ()))
+    preview_rows = _site_preview_rows(
+        review_rows_by_key.get("unresolved_sites", ()),
+        decision_id_by_source_row=decision_id_by_source_row,
+        decision_rows_by_id=client_rows_by_id,
+    )
+    return {
+        "client_mapping": client_rows,
+        "status_mapping": status_rows,
+        "duplicate_sites": duplicate_rows,
+        "site_rows_preview": preview_rows,
+    }
+
+
+def _write_start_here_sheet(
+    *,
+    ws: Any,
+    generated_at: str,
+    review_pack_dir: Path,
+    workbook_path: Path,
+    Alignment: Any,
+    Font: Any,
+    PatternFill: Any,
+) -> None:
+    rows = [
+        ("Purpose", "Grouped Monday mapping review. This workbook does not import data."),
+        ("Approval rule", "No rows are approved automatically. Bryce must set review_status explicitly."),
+        ("Decision fields", "Fill manual fields only when the decision is known. Suggestions are not approvals."),
+        ("After review", "Run scripts/apply-assisted-monday-review.ps1 to write decisions back to private review CSVs."),
+        ("Safety", "No database writes, no migrations, no V1 apply, no provider calls."),
+        ("Generated at", generated_at),
+        ("Review pack", str(review_pack_dir)),
+        ("Workbook", str(workbook_path)),
+    ]
+    ws.append(["Field", "Value"])
+    for row in rows:
+        ws.append(list(row))
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = "A1:B9"
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 120
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    warning_fill = PatternFill("solid", fgColor="F4CCCC")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = Font(bold=True, color="FFFFFF")
+    for row in ws.iter_rows(min_row=2, max_row=9, min_col=1, max_col=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+        if row[0].value in {"Approval rule", "Safety"}:
+            for cell in row:
+                cell.fill = warning_fill
+                cell.font = Font(bold=True)
+
+
+def _write_decision_summary_sheet(
+    *,
+    ws: Any,
+    assisted_rows: Mapping[str, Sequence[dict[str, str]]],
+    source_counts: Mapping[str, int],
+    Alignment: Any,
+    Font: Any,
+    PatternFill: Any,
+) -> None:
+    rows: list[tuple[str, str, int | str, str]] = [
+        ("Priority", "1", "", "Review Client Mapping Decisions first."),
+        ("Priority", "2", "", "Review Status Mapping Decisions next."),
+        ("Priority", "3", "", "Review Duplicate Site Decisions before any reviewed sample apply."),
+        ("Source rows", "unresolved_sites_review.csv", source_counts.get("unresolved_sites", 0), "Detailed source rows."),
+        ("Source rows", "client_status_review.csv", source_counts.get("client_status", 0), "Detailed source rows."),
+        ("Source rows", "duplicate_sites_review.csv", source_counts.get("duplicate_sites", 0), "Detailed source rows."),
+        ("Source rows", "status_defaults_review.csv", source_counts.get("status_defaults", 0), "Detailed source rows."),
+        (
+            "Assisted groups",
+            "Client Mapping Decisions",
+            len(assisted_rows.get("client_mapping", ())),
+            "Grouped unresolved client/site decisions.",
+        ),
+        (
+            "Assisted groups",
+            "Status Mapping Decisions",
+            len(assisted_rows.get("status_mapping", ())),
+            "Grouped raw client/site statuses.",
+        ),
+        (
+            "Assisted groups",
+            "Duplicate Site Decisions",
+            len(assisted_rows.get("duplicate_sites", ())),
+            "Grouped duplicate Site IDs.",
+        ),
+    ]
+
+    bucket_counts = Counter(row.get("diagnostic_bucket", "") for row in assisted_rows.get("site_rows_preview", ()))
+    for bucket, count in bucket_counts.most_common():
+        rows.append(("Unresolved site bucket", bucket, count, "Use Client Mapping Decisions."))
+
+    status_counts = Counter(
+        f"{row.get('status_scope')}: {row.get('raw_status')}" for row in assisted_rows.get("status_mapping", ())
+    )
+    for bucket, count in status_counts.most_common():
+        rows.append(("Status bucket", bucket, count, "Use Status Mapping Decisions."))
+
+    duplicate_counts = Counter(row.get("site_id", "") for row in assisted_rows.get("duplicate_sites", ()))
+    for bucket, count in duplicate_counts.most_common():
+        rows.append(("Duplicate bucket", bucket, count, "Use Duplicate Site Decisions."))
+
+    ws.append(["Category", "Bucket", "Count", "Action"])
+    for row in rows:
+        ws.append(list(row))
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:D{max(1, len(rows) + 1)}"
+    widths = {"A": 24, "B": 52, "C": 14, "D": 80}
+    for column, width in widths.items():
+        ws.column_dimensions[column].width = width
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = Font(bold=True, color="FFFFFF")
+    for row in ws.iter_rows(min_row=2, max_row=len(rows) + 1, min_col=1, max_col=4):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+
+def _write_assisted_instructions_sheet(
+    *,
+    ws: Any,
+    Alignment: Any,
+    Font: Any,
+    PatternFill: Any,
+) -> None:
+    instructions = [
+        "Start with Client Mapping Decisions and Status Mapping Decisions, not the raw row preview.",
+        "review_status must be approved, skip, needs_source_fix, or needs_followup before assisted apply.",
+        "Blank review_status is refused by the assisted apply helper.",
+        "Suggestions are not approvals. Set review_status only after Bryce reviews the decision.",
+        "Only exact high-confidence client ID suggestions are prefilled in suggested_client_external_id.",
+        "Blank site statuses are not prefilled as active; active is only noted as a low-confidence validation default.",
+        "Duplicate groups can be bulk marked skip or needs_source_fix; choosing one keep requires detailed row review.",
+        "Save the workbook, then run scripts/apply-assisted-monday-review.ps1 from the repo root.",
+        "After assisted decisions are written back, run the reviewed mapping workbook/sample workflow.",
+        "This workbook is private and ignored. Do not commit it or paste private row contents.",
+    ]
+    ws.append(["Step", "Instruction"])
+    for index, instruction in enumerate(instructions, start=1):
+        ws.append([index, instruction])
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:B{len(instructions) + 1}"
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 120
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = Font(bold=True, color="FFFFFF")
+    for row in ws.iter_rows(min_row=2, max_row=len(instructions) + 1, min_col=1, max_col=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+
+def generate_monday_assisted_review_workbook(
+    *,
+    review_pack_dir: Path,
+    workbook_path: Path,
+) -> AssistedReviewWorkbookSummary:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+        from openpyxl.worksheet.datavalidation import DataValidation
+    except ImportError as error:
+        raise RuntimeError(
+            "Writing the assisted Monday mapping review workbook requires openpyxl. "
+            "Install apps/api/requirements.txt first.",
+        ) from error
+
+    review_rows_by_key = _read_review_pack_rows(review_pack_dir)
+    source_counts = {key: len(rows) for key, rows in review_rows_by_key.items()}
+    assisted_rows = _assisted_workbook_rows(review_rows_by_key)
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    workbook = Workbook()
+    start = workbook.active
+    start.title = "Start Here"
+    _write_start_here_sheet(
+        ws=start,
+        generated_at=generated_at,
+        review_pack_dir=review_pack_dir,
+        workbook_path=workbook_path,
+        Alignment=Alignment,
+        Font=Font,
+        PatternFill=PatternFill,
+    )
+
+    summary = workbook.create_sheet("Decision Summary")
+    _write_decision_summary_sheet(
+        ws=summary,
+        assisted_rows=assisted_rows,
+        source_counts=source_counts,
+        Alignment=Alignment,
+        Font=Font,
+        PatternFill=PatternFill,
+    )
+
+    worksheet_specs = [
+        (
+            "Client Mapping Decisions",
+            "client_mapping",
+            ASSISTED_CLIENT_MAPPING_COLUMNS,
+            {"manual_client_external_id", "manual_status", "review_status", "notes"},
+            {
+                "manual_status": SITE_STATUS_DROPDOWN_VALUES,
+                "review_status": REVIEW_STATUS_DROPDOWN_VALUES,
+            },
+        ),
+        (
+            "Status Mapping Decisions",
+            "status_mapping",
+            ASSISTED_STATUS_MAPPING_COLUMNS,
+            {"manual_status", "review_status", "notes"},
+            {
+                "suggested_v2_status": STATUS_DECISION_DROPDOWN_VALUES,
+                "manual_status": STATUS_DECISION_DROPDOWN_VALUES,
+                "review_status": REVIEW_STATUS_DROPDOWN_VALUES,
+            },
+        ),
+        (
+            "Duplicate Site Decisions",
+            "duplicate_sites",
+            ASSISTED_DUPLICATE_SITE_COLUMNS,
+            {"keep_or_skip", "review_status", "notes"},
+            {
+                "keep_or_skip": DUPLICATE_DECISION_DROPDOWN_VALUES,
+                "review_status": REVIEW_STATUS_DROPDOWN_VALUES,
+            },
+        ),
+        (
+            "Site Rows Preview",
+            "site_rows_preview",
+            ASSISTED_SITE_ROWS_PREVIEW_COLUMNS,
+            set(),
+            {},
+        ),
+    ]
+    for sheet_name, key, columns, fill_columns, dropdowns in worksheet_specs:
+        ws = workbook.create_sheet(sheet_name)
+        _format_review_worksheet(
+            ws=ws,
+            columns=columns,
+            rows=assisted_rows[key],
+            fill_columns=fill_columns,
+            dropdowns=dropdowns,
+            DataValidation=DataValidation,
+            get_column_letter=get_column_letter,
+            Alignment=Alignment,
+            Border=Border,
+            Font=Font,
+            PatternFill=PatternFill,
+            Side=Side,
+        )
+
+    instructions = workbook.create_sheet("Instructions")
+    _write_assisted_instructions_sheet(
+        ws=instructions,
+        Alignment=Alignment,
+        Font=Font,
+        PatternFill=PatternFill,
+    )
+
+    workbook_path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(workbook_path)
+    workbook.close()
+
+    return AssistedReviewWorkbookSummary(
+        workbook_path=workbook_path,
+        source_review_pack_dir=review_pack_dir,
+        sheet_counts={key: len(rows) for key, rows in assisted_rows.items()},
+        source_row_counts=source_counts,
+        approved_count=sum(
+            1
+            for key in ("client_mapping", "status_mapping", "duplicate_sites")
+            for row in assisted_rows.get(key, ())
+            if _review_status(row) == APPROVED_REVIEW_STATUS
+        ),
+    )
+
+
+def _read_assisted_workbook_rows(workbook_path: Path) -> dict[str, list[dict[str, str]]]:
+    if not workbook_path.exists():
+        raise ReviewedMappingError(f"Missing assisted review workbook: {workbook_path}")
+    if not workbook_path.is_file():
+        raise ReviewedMappingError(f"Assisted review workbook path is not a file: {workbook_path}")
+
+    try:
+        from openpyxl import load_workbook
+    except ImportError as error:
+        raise RuntimeError(
+            "Reading the assisted Monday mapping review workbook requires openpyxl. "
+            "Install apps/api/requirements.txt first.",
+        ) from error
+
+    try:
+        workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    except Exception as error:
+        raise ReviewedMappingError(f"Could not read assisted review workbook: {workbook_path}") from error
+    try:
+        return {
+            key: _read_review_workbook_sheet(
+                workbook=workbook,
+                sheet_name=sheet_name,
+                required_columns=columns,
+            )
+            for key, (sheet_name, columns) in ASSISTED_WORKBOOK_APPLY_SHEETS.items()
+        }
+    finally:
+        workbook.close()
+
+
+def _ensure_assisted_review_status(row: dict[str, str], label: str) -> str:
+    status = _review_status(row)
+    if not status:
+        raise ReviewedMappingError(
+            f"{label} row {_review_csv_row(row)} has blank review_status. "
+            "Finish the assisted review before applying grouped decisions.",
+        )
+    if status not in REVIEW_STATUS_DROPDOWN_VALUES:
+        raise ReviewedMappingError(
+            f"{label} row {_review_csv_row(row)} has unsupported review_status `{clean(row.get('review_status'))}`.",
+        )
+    return status
+
+
+def _rows_by_decision_id(rows: Sequence[dict[str, str]], label: str) -> dict[str, dict[str, str]]:
+    rows_by_id: dict[str, dict[str, str]] = {}
+    for row in rows:
+        decision_id = clean(row.get("decision_id"))
+        if not decision_id:
+            raise ReviewedMappingError(f"{label} row {_review_csv_row(row)} lacks decision_id.")
+        if decision_id in rows_by_id:
+            raise ReviewedMappingError(f"{label} has duplicate decision_id `{decision_id}`.")
+        rows_by_id[decision_id] = row
+    return rows_by_id
+
+
+def _ensure_site_status_value(value: str, label: str, row: dict[str, str]) -> str:
+    normalized = _normalized_review_value(value)
+    if normalized and normalized not in SITE_STATUS_VALUES:
+        raise ReviewedMappingError(f"{label} row {_review_csv_row(row)} has invalid site status `{value}`.")
+    return normalized
+
+
+def _ensure_status_value_for_scope(scope: str, value: str, label: str, row: dict[str, str]) -> str:
+    normalized = _normalized_review_value(value)
+    allowed_values = CLIENT_STATUS_VALUES if scope == "client" else SITE_STATUS_VALUES
+    if normalized and normalized not in allowed_values:
+        raise ReviewedMappingError(f"{label} row {_review_csv_row(row)} has invalid {scope} status `{value}`.")
+    return normalized
+
+
+def _apply_assisted_client_mapping_rows(
+    *,
+    workbook_rows: Sequence[dict[str, str]],
+    original_rows: Sequence[dict[str, str]],
+    decision_id_by_source_row: Mapping[str, str],
+) -> tuple[list[dict[str, str]], int]:
+    workbook_rows_by_id = _rows_by_decision_id(workbook_rows, "Client Mapping Decisions")
+
+    applied = 0
+    updated_rows = []
+    for row in original_rows:
+        source_row = clean(row.get("source_row_number"))
+        decision_id = decision_id_by_source_row.get(source_row)
+        decision = workbook_rows_by_id.get(decision_id or "")
+        updated = dict(row)
+        if decision is None:
+            updated_rows.append(updated)
+            continue
+
+        status = _ensure_assisted_review_status(decision, "Client Mapping Decisions")
+        manual_status = _ensure_site_status_value(clean(decision.get("manual_status")), "Client Mapping Decisions", decision)
+        if status == APPROVED_REVIEW_STATUS:
+            manual_client = clean(decision.get("manual_client_external_id")) or clean(
+                decision.get("suggested_client_external_id"),
+            )
+            if not manual_client:
+                raise ReviewedMappingError(
+                    f"Client Mapping Decisions row {_review_csv_row(decision)} is approved but lacks a reviewed client ID.",
+                )
+            updated["manual_client_external_id"] = manual_client
+            if manual_status:
+                updated["manual_status"] = manual_status
+        elif manual_status:
+            updated["manual_status"] = manual_status
+        updated["review_status"] = status
+        if clean(decision.get("notes")):
+            updated["notes"] = clean(decision.get("notes"))
+        applied += 1
+        updated_rows.append(updated)
+    return updated_rows, applied
+
+
+def _generated_status_row_key(row: dict[str, str]) -> tuple[str, str]:
+    return (clean(row.get("status_scope")), clean(row.get("raw_status")) or "<blank>")
+
+
+def _apply_assisted_status_rows(
+    *,
+    workbook_rows: Sequence[dict[str, str]],
+    generated_rows: Sequence[dict[str, str]],
+    client_status_rows: Sequence[dict[str, str]],
+    status_default_rows: Sequence[dict[str, str]],
+) -> tuple[list[dict[str, str]], list[dict[str, str]], int]:
+    workbook_rows_by_id = _rows_by_decision_id(workbook_rows, "Status Mapping Decisions")
+    generated_by_key = {_generated_status_row_key(row): clean(row.get("decision_id")) for row in generated_rows}
+    applied = 0
+
+    updated_client_rows = []
+    for row in client_status_rows:
+        key = _status_decision_key("client", row.get("raw_client_status", ""))
+        decision = workbook_rows_by_id.get(generated_by_key.get(key, ""))
+        updated = dict(row)
+        if decision is not None:
+            status = _ensure_assisted_review_status(decision, "Status Mapping Decisions")
+            chosen = clean(decision.get("manual_status")) or clean(decision.get("suggested_v2_status"))
+            chosen = _ensure_status_value_for_scope("client", chosen, "Status Mapping Decisions", decision)
+            if status == APPROVED_REVIEW_STATUS and not chosen:
+                raise ReviewedMappingError(
+                    f"Status Mapping Decisions row {_review_csv_row(decision)} is approved but lacks a client status.",
+                )
+            if chosen:
+                updated["suggested_status"] = chosen
+            updated["review_status"] = status
+            if clean(decision.get("notes")):
+                updated["notes"] = clean(decision.get("notes"))
+            applied += 1
+        updated_client_rows.append(updated)
+
+    updated_status_default_rows = []
+    for row in status_default_rows:
+        key = _status_decision_key("site", row.get("raw_site_status", ""))
+        decision = workbook_rows_by_id.get(generated_by_key.get(key, ""))
+        updated = dict(row)
+        if decision is not None:
+            status = _ensure_assisted_review_status(decision, "Status Mapping Decisions")
+            chosen = clean(decision.get("manual_status")) or clean(decision.get("suggested_v2_status"))
+            chosen = _ensure_status_value_for_scope("site", chosen, "Status Mapping Decisions", decision)
+            if status == APPROVED_REVIEW_STATUS and not chosen:
+                raise ReviewedMappingError(
+                    f"Status Mapping Decisions row {_review_csv_row(decision)} is approved but lacks a site status.",
+                )
+            if chosen:
+                updated["manual_status"] = chosen
+            updated["review_status"] = status
+            if clean(decision.get("notes")):
+                updated["notes"] = clean(decision.get("notes"))
+            applied += 1
+        updated_status_default_rows.append(updated)
+
+    return updated_client_rows, updated_status_default_rows, applied
+
+
+def _apply_assisted_duplicate_rows(
+    *,
+    workbook_rows: Sequence[dict[str, str]],
+    duplicate_rows: Sequence[dict[str, str]],
+) -> tuple[list[dict[str, str]], int]:
+    workbook_rows_by_site_id = {}
+    for row in workbook_rows:
+        site_id = clean(row.get("site_id"))
+        if not site_id:
+            raise ReviewedMappingError(f"Duplicate Site Decisions row {_review_csv_row(row)} lacks site_id.")
+        if site_id in workbook_rows_by_site_id:
+            raise ReviewedMappingError(f"Duplicate Site Decisions has duplicate site_id `{site_id}`.")
+        workbook_rows_by_site_id[site_id] = row
+
+    applied = 0
+    updated_rows = []
+    for row in duplicate_rows:
+        site_id = clean(row.get("site_id")) or clean(row.get("duplicate_group"))
+        decision = workbook_rows_by_site_id.get(site_id)
+        updated = dict(row)
+        if decision is not None:
+            status = _ensure_assisted_review_status(decision, "Duplicate Site Decisions")
+            keep_or_skip = _normalized_review_value(decision.get("keep_or_skip"))
+            if status == APPROVED_REVIEW_STATUS:
+                if keep_or_skip == "keep":
+                    raise ReviewedMappingError(
+                        "Duplicate Site Decisions cannot bulk apply a keep decision. "
+                        "Choose the keep row in the detailed review workbook.",
+                    )
+                if keep_or_skip not in {"skip", "needs_source_fix"}:
+                    raise ReviewedMappingError(
+                        f"Duplicate Site Decisions row {_review_csv_row(decision)} is approved but lacks a safe bulk duplicate decision.",
+                    )
+                updated["keep_or_skip"] = keep_or_skip
+            elif status == "skip":
+                updated["keep_or_skip"] = "skip"
+            elif status == "needs_source_fix":
+                updated["keep_or_skip"] = "needs_source_fix"
+            elif status == "needs_followup":
+                updated["keep_or_skip"] = ""
+            if clean(decision.get("notes")):
+                updated["notes"] = clean(decision.get("notes"))
+            applied += 1
+        updated_rows.append(updated)
+    return updated_rows, applied
+
+
+def apply_assisted_review_workbook_to_csvs(
+    *,
+    workbook_path: Path,
+    review_pack_dir: Path,
+) -> AssistedReviewWorkbookApplySummary:
+    review_rows_by_key = _read_review_pack_rows(review_pack_dir)
+    generated_assisted_rows = _assisted_workbook_rows(review_rows_by_key)
+    _generated_client_rows, decision_id_by_source_row = _client_decision_rows(
+        review_rows_by_key["unresolved_sites"],
+    )
+    workbook_rows = _read_assisted_workbook_rows(workbook_path)
+
+    for row in workbook_rows["client_mapping"]:
+        _ensure_assisted_review_status(row, "Client Mapping Decisions")
+    for row in workbook_rows["status_mapping"]:
+        _ensure_assisted_review_status(row, "Status Mapping Decisions")
+    for row in workbook_rows["duplicate_sites"]:
+        _ensure_assisted_review_status(row, "Duplicate Site Decisions")
+
+    updated_unresolved_rows, applied_client_rows = _apply_assisted_client_mapping_rows(
+        workbook_rows=workbook_rows["client_mapping"],
+        original_rows=review_rows_by_key["unresolved_sites"],
+        decision_id_by_source_row=decision_id_by_source_row,
+    )
+    updated_client_status_rows, updated_status_default_rows, applied_status_rows = _apply_assisted_status_rows(
+        workbook_rows=workbook_rows["status_mapping"],
+        generated_rows=generated_assisted_rows["status_mapping"],
+        client_status_rows=review_rows_by_key["client_status"],
+        status_default_rows=review_rows_by_key["status_defaults"],
+    )
+    updated_duplicate_rows, applied_duplicate_rows = _apply_assisted_duplicate_rows(
+        workbook_rows=workbook_rows["duplicate_sites"],
+        duplicate_rows=review_rows_by_key["duplicate_sites"],
+    )
+
+    updated_rows_by_key = {
+        "unresolved_sites": updated_unresolved_rows,
+        "client_status": updated_client_status_rows,
+        "duplicate_sites": updated_duplicate_rows,
+        "status_defaults": updated_status_default_rows,
+    }
+    review_paths = _review_file_paths(review_pack_dir)
+    _write_csv(review_paths["unresolved_sites"], UNRESOLVED_SITES_REVIEW_COLUMNS, updated_unresolved_rows)
+    _write_csv(review_paths["client_status"], CLIENT_STATUS_REVIEW_COLUMNS, updated_client_status_rows)
+    _write_csv(review_paths["duplicate_sites"], DUPLICATE_SITES_REVIEW_COLUMNS, updated_duplicate_rows)
+    _write_csv(review_paths["status_defaults"], STATUS_DEFAULTS_REVIEW_COLUMNS, updated_status_default_rows)
+
+    return AssistedReviewWorkbookApplySummary(
+        workbook_path=workbook_path,
+        review_pack_dir=review_pack_dir,
+        files=review_paths,
+        sheet_counts={key: len(rows) for key, rows in workbook_rows.items()},
+        applied_counts={
+            "client_mapping": applied_client_rows,
+            "status_mapping": applied_status_rows,
+            "duplicate_sites": applied_duplicate_rows,
+        },
+        approved_count=_approved_review_count(updated_rows_by_key),
+    )
+
+
 def _excel_list_formula(values: Sequence[str]) -> str:
     return '"' + ",".join(values) + '"'
 
@@ -2482,6 +3424,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Export Bryce-reviewed workbook tabs back to private review CSVs only.",
     )
     parser.add_argument(
+        "--write-assisted-review-workbook",
+        action="store_true",
+        help="Write a grouped assisted review workbook from existing Monday mapping review CSVs.",
+    )
+    parser.add_argument(
+        "--apply-assisted-review-workbook",
+        action="store_true",
+        help="Apply explicit grouped assisted review decisions back to private review CSVs only.",
+    )
+    parser.add_argument(
         "--review-output-dir",
         type=Path,
         default=repo_root / "import_validation_reports" / "monday_review_pack",
@@ -2490,6 +3442,14 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--review-workbook-path",
         type=Path,
         default=repo_root / "import_validation_reports" / "monday_review_pack" / "monday_mapping_review.xlsx",
+    )
+    parser.add_argument(
+        "--assisted-review-workbook-path",
+        type=Path,
+        default=repo_root
+        / "import_validation_reports"
+        / "monday_review_pack"
+        / "monday_mapping_assisted_review.xlsx",
     )
     parser.add_argument(
         "--max-review-rows",
@@ -2523,6 +3483,52 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Choose either --write-review-workbook or --apply-review-workbook, not both.", file=sys.stderr)
         print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
         return 2
+    if args.write_assisted_review_workbook and args.apply_assisted_review_workbook:
+        print(
+            "Choose either --write-assisted-review-workbook or --apply-assisted-review-workbook, not both.",
+            file=sys.stderr,
+        )
+        print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+        return 2
+    if args.apply_assisted_review_workbook and (
+        args.write_review_workbook
+        or args.apply_review_workbook
+        or args.write_review_pack
+        or args.apply_reviewed_mappings
+    ):
+        print("--apply-assisted-review-workbook must run by itself.", file=sys.stderr)
+        print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+        return 2
+    if args.write_assisted_review_workbook and (
+        args.write_review_workbook or args.apply_review_workbook or args.apply_reviewed_mappings
+    ):
+        print("--write-assisted-review-workbook cannot be combined with detailed workbook apply/write modes.", file=sys.stderr)
+        print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+        return 2
+
+    if args.apply_assisted_review_workbook:
+        try:
+            assisted_apply_summary = apply_assisted_review_workbook_to_csvs(
+                workbook_path=args.assisted_review_workbook_path,
+                review_pack_dir=args.review_pack_dir,
+            )
+        except (ReviewedMappingError, RuntimeError) as error:
+            print(f"NOT READY: {error}", file=sys.stderr)
+            print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+            return 2
+
+        print("Applied assisted Monday mapping review decisions to private review CSVs only.")
+        print(f"  Workbook:     {assisted_apply_summary.workbook_path}")
+        print(f"  Review pack:  {assisted_apply_summary.review_pack_dir}")
+        print(f"  Client mapping groups: {assisted_apply_summary.sheet_counts['client_mapping']}")
+        print(f"  Status mapping groups: {assisted_apply_summary.sheet_counts['status_mapping']}")
+        print(f"  Duplicate groups:      {assisted_apply_summary.sheet_counts['duplicate_sites']}")
+        print(f"  Applied client rows:   {assisted_apply_summary.applied_counts['client_mapping']}")
+        print(f"  Applied status rows:   {assisted_apply_summary.applied_counts['status_mapping']}")
+        print(f"  Applied duplicate rows:{assisted_apply_summary.applied_counts['duplicate_sites']}")
+        print(f"  Approved detailed rows:{assisted_apply_summary.approved_count}")
+        print("Safety: no database writes, no imports, no provider calls.")
+        return 0
 
     if args.apply_review_workbook:
         try:
@@ -2546,6 +3552,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Safety: no database writes, no imports, no provider calls.")
         if not args.apply_reviewed_mappings:
             return 0
+
+    if args.write_assisted_review_workbook and not args.write_review_pack:
+        try:
+            assisted_workbook_summary = generate_monday_assisted_review_workbook(
+                review_pack_dir=args.review_pack_dir,
+                workbook_path=args.assisted_review_workbook_path,
+            )
+        except (ReviewedMappingError, RuntimeError) as error:
+            print(f"Could not write assisted review workbook: {error}", file=sys.stderr)
+            print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+            return 2
+
+        print("Created assisted Monday mapping review workbook for grouped human review only.")
+        print(f"  Workbook:     {assisted_workbook_summary.workbook_path}")
+        print(f"  Review pack:  {assisted_workbook_summary.source_review_pack_dir}")
+        print(f"  Source unresolved site rows: {assisted_workbook_summary.source_row_counts['unresolved_sites']}")
+        print(f"  Client mapping groups:       {assisted_workbook_summary.sheet_counts['client_mapping']}")
+        print(f"  Status mapping groups:       {assisted_workbook_summary.sheet_counts['status_mapping']}")
+        print(f"  Duplicate site groups:       {assisted_workbook_summary.sheet_counts['duplicate_sites']}")
+        print(f"  Approved grouped decisions:  {assisted_workbook_summary.approved_count}")
+        print("Safety: no database writes, no imports, no provider calls.")
+        return 0
 
     if args.write_review_workbook and not args.write_review_pack and not args.apply_reviewed_mappings:
         try:
@@ -2637,6 +3665,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     review_summary = None
     workbook_summary = None
+    assisted_workbook_summary = None
     if args.write_review_pack:
         review_summary = generate_monday_review_pack(
             contacts_path=contacts_path,
@@ -2652,6 +3681,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             workbook_summary = generate_monday_review_workbook(
                 review_pack_dir=review_summary.output_dir,
                 workbook_path=args.review_workbook_path,
+            )
+        if args.write_assisted_review_workbook:
+            assisted_workbook_summary = generate_monday_assisted_review_workbook(
+                review_pack_dir=review_summary.output_dir,
+                workbook_path=args.assisted_review_workbook_path,
             )
     print("Prepared Monday sample for validation only.")
     print(f"  Clients rows: {summary.clients_written}")
@@ -2670,6 +3704,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if workbook_summary is not None:
         print(f"  Review workbook: {workbook_summary.workbook_path}")
         print(f"    Approved rows: {workbook_summary.approved_count}")
+    if assisted_workbook_summary is not None:
+        print(f"  Assisted review workbook: {assisted_workbook_summary.workbook_path}")
+        print(f"    Client mapping groups: {assisted_workbook_summary.sheet_counts['client_mapping']}")
+        print(f"    Status mapping groups: {assisted_workbook_summary.sheet_counts['status_mapping']}")
+        print(f"    Duplicate groups:      {assisted_workbook_summary.sheet_counts['duplicate_sites']}")
     print("Safety: no database writes, no imports, no provider calls.")
     return 0
 

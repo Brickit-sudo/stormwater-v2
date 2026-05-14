@@ -208,7 +208,89 @@ Do not proceed to import until:
 
 After Bryce completes the review, generate a larger private validation sample using only reviewed mappings. Do not import yet.
 
-## 11. Review Mapping Workbook
+## 11. Assisted Mapping Review
+
+Use the assisted review workbook before the raw detailed review workbook when the review pack has many repeated decisions. It groups repeated client mapping issues, raw statuses, and duplicate Site IDs so Bryce can review decision buckets instead of scanning every raw row first.
+
+This is still human review only:
+
+- no import,
+- no database write,
+- no migration,
+- no V1 apply,
+- no auto-approval,
+- no provider calls.
+
+Generate the grouped workbook from the repo root:
+
+```powershell
+cd C:\Users\brolf\Desktop\Stormwater_APP_Clean\stormwater-v2
+.\scripts\create-assisted-monday-review.ps1 -Open
+```
+
+Equivalent Python command:
+
+```powershell
+.\apps\api\.venv\Scripts\python apps\api\scripts\prepare_monday_tiny_sample.py `
+  --write-assisted-review-workbook `
+  --review-pack-dir "import_validation_reports\monday_review_pack" `
+  --assisted-review-workbook-path "import_validation_reports\monday_review_pack\monday_mapping_assisted_review.xlsx"
+```
+
+The workbook is written to:
+
+```text
+import_validation_reports/monday_review_pack/monday_mapping_assisted_review.xlsx
+```
+
+Workbook tabs:
+
+- `Start Here`: safety notes, purpose, and next command.
+- `Decision Summary`: grouped counts, unresolved buckets, status buckets, duplicate buckets, and priority review order.
+- `Client Mapping Decisions`: grouped unresolved client/site mapping decisions.
+- `Status Mapping Decisions`: grouped raw client/site statuses and blank/default statuses.
+- `Duplicate Site Decisions`: grouped duplicate Site ID decisions.
+- `Site Rows Preview`: reference-only row preview for tracing grouped decisions.
+- `Instructions`: detailed review checklist.
+
+Bryce should fill:
+
+- `review_status` with `approved`, `skip`, `needs_source_fix`, or `needs_followup`.
+- `manual_client_external_id` only when the correct client is known.
+- `manual_status` only when the correct reviewed V2 status is known.
+- `keep_or_skip` only for safe duplicate bulk decisions such as `skip` or `needs_source_fix`.
+- `notes` when context should survive into the private CSVs.
+
+Suggestion behavior:
+
+- Exact Client ID matches may appear as high-confidence suggestions.
+- Exact prior Bryce-approved candidate matches may appear as high-confidence suggestions.
+- Obvious exact site statuses such as `Active`, `Inactive`, `On Hold`, and `Archived` may appear as suggestions.
+- Blank site status is described only as a low-confidence validation default and still requires Bryce review.
+- Suggestions are never approvals.
+- Blank `review_status` is refused by the assisted apply helper.
+- Weak client names, missing Client IDs, missing Site IDs, and duplicate keep choices are not guessed.
+
+After Bryce fills and saves the assisted workbook, apply grouped decisions back to the private detailed review CSVs:
+
+```powershell
+.\scripts\apply-assisted-monday-review.ps1
+```
+
+Equivalent Python command:
+
+```powershell
+.\apps\api\.venv\Scripts\python apps\api\scripts\prepare_monday_tiny_sample.py `
+  --apply-assisted-review-workbook `
+  --review-pack-dir "import_validation_reports\monday_review_pack" `
+  --assisted-review-workbook-path "import_validation_reports\monday_review_pack\monday_mapping_assisted_review.xlsx"
+```
+
+The assisted apply helper updates only the private review CSVs in `import_validation_reports/monday_review_pack/`. It does not generate the reviewed sample, import anything, write the database, run migrations, or call providers.
+
+After assisted decisions are applied, run the reviewed mapping workbook/sample workflow below. This is still validation prep only, not an import.
+
+## 12. Review Mapping Workbook
 
 The review workbook is a private Excel convenience layer over the review CSVs. It is for human review only. It does not import data, write the database, run migrations, run V1 migration apply, or call Outlook, Gmail, Google Drive, or OpenAI.
 
@@ -270,7 +352,7 @@ Review steps:
 
 After workbook review, run the Apply Reviewed Workbook helper. It updates the private review CSVs, generates the reviewed private sample, and validates it without importing anything.
 
-## 12. Apply Reviewed Workbook
+## 13. Apply Reviewed Workbook
 
 Fill the workbook first, then save it.
 
@@ -300,7 +382,7 @@ Private files remain ignored:
 
 If the helper prints `READY`, the next step is a larger reviewed private sample validation. Do not proceed to mass import.
 
-## 13. How to apply Bryce-reviewed mappings
+## 14. How to apply Bryce-reviewed mappings
 
 The reviewed mapping applier reads only the private review CSVs and private Monday exports, then writes a new private Clients/Sites validation sample. It still does not import data, write the database, run migrations, run the V1 apply path, or call Outlook, Gmail, Google Drive, or OpenAI.
 
@@ -366,7 +448,7 @@ Do not commit:
 - `docs/import_templates/v2/private/sites_reviewed_sample.csv`
 - anything under `import_validation_reports/reviewed_sample/`
 
-## 14. How to read validator results
+## 15. How to read validator results
 
 Start with the console summary:
 
@@ -380,7 +462,7 @@ Start with the console summary:
 
 Open the Markdown report for exact row numbers and field-level messages.
 
-## 15. Stop conditions
+## 16. Stop conditions
 
 Stop and fix the private CSVs when any of these appear:
 
@@ -397,7 +479,7 @@ Stop and fix the private CSVs when any of these appear:
 
 No orphan Sites. No weak Client mapping. No blind import.
 
-## 16. What files must never be committed
+## 17. What files must never be committed
 
 Never commit:
 
@@ -416,7 +498,7 @@ Never commit:
 
 The committed templates are safe. Private copies and reports are not.
 
-## 17. Next step after clean validation
+## 18. Next step after clean validation
 
 After a clean tiny validation:
 
