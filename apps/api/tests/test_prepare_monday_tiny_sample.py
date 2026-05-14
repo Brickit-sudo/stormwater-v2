@@ -11,9 +11,11 @@ import pytest
 from scripts.prepare_monday_tiny_sample import (
     CLIENT_STATUS_REVIEW_COLUMNS,
     DUPLICATE_SITES_REVIEW_COLUMNS,
+    REVIEW_WORKBOOK_SHEETS,
     STATUS_DEFAULTS_REVIEW_COLUMNS,
     UNRESOLVED_SITES_REVIEW_COLUMNS,
     generate_monday_review_pack,
+    generate_monday_review_workbook,
     prepare_reviewed_sample,
     prepare_tiny_sample,
 )
@@ -153,6 +155,10 @@ def _write_review_pack(
         ],
     )
     return review_dir
+
+
+def _validation_formulas(sheet) -> set[str]:
+    return {validation.formula1 for validation in sheet.data_validations.dataValidation}
 
 
 def _prepare_reviewed_sample(tmp_path: Path, exports: dict[str, Path], review_dir: Path):
@@ -421,6 +427,115 @@ def test_generate_review_pack_writes_private_review_files_and_bucket_counts(tmp_
     assert "| Site IDs not found in Leads | 1 |" in readme
     assert "| duplicate Site ID rows | 2 |" in readme
     assert "no database writes, no provider calls" in readme
+
+
+def test_generate_review_workbook_writes_expected_sheets_and_dropdowns(tmp_path: Path) -> None:
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                manual_client_external_id="client-good",
+                manual_status="active",
+                review_status="approved",
+            ),
+        ],
+        client_status_rows=[
+            _review_row(
+                CLIENT_STATUS_REVIEW_COLUMNS,
+                source_row_number="4",
+                client_id="client-unmapped",
+                client_name_or_label="Beta LLC",
+                raw_client_status="Needs Review",
+                suggested_status="prospect",
+                review_status="approved",
+            ),
+        ],
+        duplicate_rows=[
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="9",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site A",
+                duplicate_group="site_id:site-dup",
+                keep_or_skip="keep",
+            ),
+        ],
+        status_default_rows=[
+            _review_row(
+                STATUS_DEFAULTS_REVIEW_COLUMNS,
+                source_row_number="3",
+                site_id="site-good",
+                site_name_or_label="Good Site",
+                raw_site_status="Needs Field Review",
+                defaulted_status="active",
+                manual_status="active",
+                review_status="approved",
+            ),
+        ],
+    )
+    workbook_path = tmp_path / "reviews" / "monday_mapping_review.xlsx"
+
+    summary = generate_monday_review_workbook(review_pack_dir=review_dir, workbook_path=workbook_path)
+
+    assert summary.workbook_path == workbook_path
+    assert summary.sheet_counts == {
+        "unresolved_sites": 1,
+        "client_status": 1,
+        "duplicate_sites": 1,
+        "status_defaults": 1,
+    }
+    assert summary.approved_count == 3
+    assert workbook_path.exists()
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_path)
+    try:
+        assert workbook.sheetnames == list(REVIEW_WORKBOOK_SHEETS)
+
+        unresolved = workbook["Unresolved Sites"]
+        assert unresolved.freeze_panes == "A2"
+        assert unresolved.auto_filter.ref is not None
+        assert [cell.value for cell in unresolved[1]] == list(UNRESOLVED_SITES_REVIEW_COLUMNS)
+        assert '"approved,skip,needs_source_fix,needs_followup"' in _validation_formulas(unresolved)
+        assert '"active,inactive,on_hold,archived"' in _validation_formulas(unresolved)
+
+        client_status = workbook["Client Status Review"]
+        assert [cell.value for cell in client_status[1]] == list(CLIENT_STATUS_REVIEW_COLUMNS)
+        assert '"active,inactive,prospect,archived"' in _validation_formulas(client_status)
+
+        duplicate_sites = workbook["Duplicate Sites"]
+        assert [cell.value for cell in duplicate_sites[1]] == list(DUPLICATE_SITES_REVIEW_COLUMNS)
+        assert '"keep,skip,needs_source_fix,needs_followup"' in _validation_formulas(duplicate_sites)
+
+        status_defaults = workbook["Status Defaults"]
+        assert [cell.value for cell in status_defaults[1]] == list(STATUS_DEFAULTS_REVIEW_COLUMNS)
+        assert '"active,inactive,on_hold,archived"' in _validation_formulas(status_defaults)
+
+        overview = {
+            row[0]: row[1]
+            for row in workbook["Overview"].iter_rows(min_row=2, max_col=2, values_only=True)
+            if row[0]
+        }
+        assert overview["unresolved sites count"] == 1
+        assert overview["client status review count"] == 1
+        assert overview["duplicate site review count"] == 1
+        assert overview["status default review count"] == 1
+        assert overview["approved count if regenerated from filled values"] == 3
+        assert overview["warning"] == "This workbook is private and must not be committed."
+
+        instructions = [
+            row[1]
+            for row in workbook["Instructions"].iter_rows(min_row=2, max_col=2, values_only=True)
+            if row[1]
+        ]
+        assert "Do not import from this workbook directly." in instructions
+    finally:
+        workbook.close()
 
 
 def test_prepare_reviewed_sample_applies_approved_mappings_and_validates(tmp_path: Path) -> None:
@@ -709,6 +824,26 @@ def test_generate_review_pack_does_not_open_db_or_network(tmp_path: Path, monkey
         output_dir=tmp_path / "reports" / "review_pack",
         max_clients=1,
         max_sites=1,
+    )
+
+    assert list(tmp_path.rglob("*.db")) == []
+
+
+def test_generate_review_workbook_does_not_open_db_or_network(tmp_path: Path, monkeypatch) -> None:
+    review_dir = _write_review_pack(tmp_path / "reviews")
+
+    def fail_sqlite_connect(*_args, **_kwargs):
+        raise AssertionError("review workbook generation must not open a database")
+
+    def fail_socket_connect(*_args, **_kwargs):
+        raise AssertionError("review workbook generation must not open a network connection")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_sqlite_connect)
+    monkeypatch.setattr(socket, "create_connection", fail_socket_connect)
+
+    generate_monday_review_workbook(
+        review_pack_dir=review_dir,
+        workbook_path=tmp_path / "reviews" / "monday_mapping_review.xlsx",
     )
 
     assert list(tmp_path.rglob("*.db")) == []

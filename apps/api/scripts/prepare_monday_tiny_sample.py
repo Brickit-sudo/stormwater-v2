@@ -96,6 +96,30 @@ CLIENT_STATUS_VALUES = {"active", "inactive", "prospect", "archived"}
 SITE_STATUS_VALUES = {"active", "inactive", "on_hold", "archived"}
 DUPLICATE_DECISIONS = {"keep", "skip", "needs_source_fix"}
 
+REVIEW_STATUS_DROPDOWN_VALUES = (
+    "approved",
+    "skip",
+    "needs_source_fix",
+    "needs_followup",
+)
+CLIENT_STATUS_DROPDOWN_VALUES = ("active", "inactive", "prospect", "archived")
+SITE_STATUS_DROPDOWN_VALUES = ("active", "inactive", "on_hold", "archived")
+DUPLICATE_DECISION_DROPDOWN_VALUES = (
+    "keep",
+    "skip",
+    "needs_source_fix",
+    "needs_followup",
+)
+
+REVIEW_WORKBOOK_SHEETS = (
+    "Overview",
+    "Unresolved Sites",
+    "Client Status Review",
+    "Duplicate Sites",
+    "Status Defaults",
+    "Instructions",
+)
+
 SITE_REVIEW_BUCKET_LABELS = {
     "site_id_not_found_in_leads": "Site IDs not found in Leads",
     "site_has_no_client_id": "sites with no Client ID",
@@ -180,6 +204,14 @@ class ReviewedSampleSummary:
     validation_md_path: Path
     validation_ready: bool
     validation_totals: dict[str, int]
+
+
+@dataclass(frozen=True)
+class ReviewWorkbookSummary:
+    workbook_path: Path
+    source_review_pack_dir: Path
+    sheet_counts: dict[str, int]
+    approved_count: int
 
 
 @dataclass(frozen=True)
@@ -1907,6 +1939,305 @@ def generate_monday_review_pack(
     )
 
 
+def _approved_review_count(review_rows_by_key: Mapping[str, Sequence[dict[str, str]]]) -> int:
+    return sum(
+        1
+        for key in ("unresolved_sites", "client_status", "status_defaults")
+        for row in review_rows_by_key.get(key, ())
+        if _review_status(row) == APPROVED_REVIEW_STATUS
+    )
+
+
+def _excel_list_formula(values: Sequence[str]) -> str:
+    return '"' + ",".join(values) + '"'
+
+
+def _worksheet_last_row(row_count: int) -> int:
+    return max(1, row_count + 1)
+
+
+def _format_review_worksheet(
+    *,
+    ws: Any,
+    columns: Sequence[str],
+    rows: Sequence[dict[str, str]],
+    fill_columns: set[str],
+    dropdowns: Mapping[str, Sequence[str]],
+    DataValidation: Any,
+    get_column_letter: Any,
+    Alignment: Any,
+    Border: Any,
+    Font: Any,
+    PatternFill: Any,
+    Side: Any,
+) -> None:
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    fill_required = PatternFill("solid", fgColor="FFF2CC")
+    border = Border(bottom=Side(style="thin", color="D9E2F3"))
+    header_font = Font(bold=True, color="FFFFFF")
+    body_alignment = Alignment(vertical="top")
+    wrap_alignment = Alignment(wrap_text=True, vertical="top")
+
+    ws.append(list(columns))
+    for row in rows:
+        ws.append([row.get(column, "") for column in columns])
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(columns))}{_worksheet_last_row(len(rows))}"
+
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        cell.border = border
+
+    dropdown_last_row = max(len(rows) + 1, 1000)
+    body_last_row = len(rows) + 1
+    for column_index, column in enumerate(columns, start=1):
+        letter = get_column_letter(column_index)
+        values = [str(row.get(column, "")) for row in rows]
+        width = max([len(column), *(len(value) for value in values[:200])] or [len(column)])
+        max_width = 62 if column in {"notes", "suggested_fix", "suggested_action"} else 34
+        ws.column_dimensions[letter].width = max(12, min(width + 2, max_width))
+
+        alignment = wrap_alignment if column in {"notes", "suggested_fix", "suggested_action"} else body_alignment
+        if body_last_row >= 2:
+            if column in fill_columns:
+                for cell in ws[f"{letter}2:{letter}{body_last_row}"]:
+                    cell[0].fill = fill_required
+            for cell in ws[f"{letter}2:{letter}{body_last_row}"]:
+                cell[0].alignment = alignment
+
+        if column in dropdowns:
+            validation = DataValidation(
+                type="list",
+                formula1=_excel_list_formula(dropdowns[column]),
+                allow_blank=True,
+                showErrorMessage=True,
+                errorTitle="Unsupported value",
+                error="Use a value from the dropdown or leave the cell blank.",
+            )
+            validation.add(f"{letter}2:{letter}{dropdown_last_row}")
+            ws.add_data_validation(validation)
+
+
+def _write_overview_sheet(
+    *,
+    ws: Any,
+    generated_at: str,
+    review_pack_dir: Path,
+    sheet_counts: Mapping[str, int],
+    approved_count: int,
+    Alignment: Any,
+    Font: Any,
+    PatternFill: Any,
+) -> None:
+    rows = [
+        ("generated_at", generated_at),
+        ("source review pack folder", str(review_pack_dir)),
+        ("unresolved sites count", sheet_counts["unresolved_sites"]),
+        ("client status review count", sheet_counts["client_status"]),
+        ("duplicate site review count", sheet_counts["duplicate_sites"]),
+        ("status default review count", sheet_counts["status_defaults"]),
+        ("approved count if regenerated from filled values", approved_count),
+        (
+            "instructions summary",
+            "Review highlighted cells, approve only safe rows, and export review tabs back to CSV before using the applier.",
+        ),
+        ("warning", "This workbook is private and must not be committed."),
+    ]
+    ws.append(["Field", "Value"])
+    for row in rows:
+        ws.append(list(row))
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = "A1:B10"
+    ws.column_dimensions["A"].width = 42
+    ws.column_dimensions["B"].width = 110
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    warning_fill = PatternFill("solid", fgColor="F4CCCC")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = Font(bold=True, color="FFFFFF")
+    for row in ws.iter_rows(min_row=2, max_row=10, min_col=1, max_col=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+        if row[0].value == "warning":
+            for cell in row:
+                cell.fill = warning_fill
+                cell.font = Font(bold=True)
+
+
+def _write_instructions_sheet(
+    *,
+    ws: Any,
+    Alignment: Any,
+    Font: Any,
+    PatternFill: Any,
+) -> None:
+    instructions = [
+        "Review Unresolved Sites.",
+        "Fill manual_client_external_id only when you know the correct client.",
+        "Set review_status to approved only when the row is safe.",
+        "Use skip for rows that should not import.",
+        "Use needs_source_fix for bad source data.",
+        "Use needs_followup if Bryce/Tom needs to decide.",
+        "Review Client Status Review and set suggested_status/manual status.",
+        "Review Duplicate Sites and mark keep/skip.",
+        "Review Status Defaults and approve or set manual_status.",
+        "Save workbook.",
+        "Export/save review tabs back to CSV only if helper supports that.",
+        "Do not import from this workbook directly.",
+    ]
+    ws.append(["Step", "Instruction"])
+    for index, instruction in enumerate(instructions, start=1):
+        ws.append([index, instruction])
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = "A1:B13"
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 120
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = Font(bold=True, color="FFFFFF")
+    for row in ws.iter_rows(min_row=2, max_row=13, min_col=1, max_col=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+
+def generate_monday_review_workbook(
+    *,
+    review_pack_dir: Path,
+    workbook_path: Path,
+) -> ReviewWorkbookSummary:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+        from openpyxl.worksheet.datavalidation import DataValidation
+    except ImportError as error:
+        raise RuntimeError(
+            "Writing the Monday mapping review workbook requires openpyxl. "
+            "Install apps/api/requirements.txt first.",
+        ) from error
+
+    review_paths = _review_file_paths(review_pack_dir)
+    review_rows_by_key = {
+        "unresolved_sites": _read_review_csv(
+            review_paths["unresolved_sites"],
+            UNRESOLVED_SITES_REVIEW_COLUMNS,
+            "unresolved_sites_review.csv",
+        ),
+        "client_status": _read_review_csv(
+            review_paths["client_status"],
+            CLIENT_STATUS_REVIEW_COLUMNS,
+            "client_status_review.csv",
+        ),
+        "duplicate_sites": _read_review_csv(
+            review_paths["duplicate_sites"],
+            DUPLICATE_SITES_REVIEW_COLUMNS,
+            "duplicate_sites_review.csv",
+        ),
+        "status_defaults": _read_review_csv(
+            review_paths["status_defaults"],
+            STATUS_DEFAULTS_REVIEW_COLUMNS,
+            "status_defaults_review.csv",
+        ),
+    }
+
+    sheet_counts = {key: len(rows) for key, rows in review_rows_by_key.items()}
+    approved_count = _approved_review_count(review_rows_by_key)
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    workbook = Workbook()
+    overview = workbook.active
+    overview.title = "Overview"
+    _write_overview_sheet(
+        ws=overview,
+        generated_at=generated_at,
+        review_pack_dir=review_pack_dir,
+        sheet_counts=sheet_counts,
+        approved_count=approved_count,
+        Alignment=Alignment,
+        Font=Font,
+        PatternFill=PatternFill,
+    )
+
+    worksheet_specs = [
+        (
+            "Unresolved Sites",
+            "unresolved_sites",
+            UNRESOLVED_SITES_REVIEW_COLUMNS,
+            {"manual_client_external_id", "manual_status", "review_status", "notes"},
+            {
+                "manual_status": SITE_STATUS_DROPDOWN_VALUES,
+                "review_status": REVIEW_STATUS_DROPDOWN_VALUES,
+            },
+        ),
+        (
+            "Client Status Review",
+            "client_status",
+            CLIENT_STATUS_REVIEW_COLUMNS,
+            {"suggested_status", "review_status", "notes"},
+            {
+                "suggested_status": CLIENT_STATUS_DROPDOWN_VALUES,
+                "review_status": REVIEW_STATUS_DROPDOWN_VALUES,
+            },
+        ),
+        (
+            "Duplicate Sites",
+            "duplicate_sites",
+            DUPLICATE_SITES_REVIEW_COLUMNS,
+            {"keep_or_skip", "notes"},
+            {"keep_or_skip": DUPLICATE_DECISION_DROPDOWN_VALUES},
+        ),
+        (
+            "Status Defaults",
+            "status_defaults",
+            STATUS_DEFAULTS_REVIEW_COLUMNS,
+            {"review_status", "manual_status", "notes"},
+            {
+                "review_status": REVIEW_STATUS_DROPDOWN_VALUES,
+                "manual_status": SITE_STATUS_DROPDOWN_VALUES,
+            },
+        ),
+    ]
+    for sheet_name, key, columns, fill_columns, dropdowns in worksheet_specs:
+        ws = workbook.create_sheet(sheet_name)
+        _format_review_worksheet(
+            ws=ws,
+            columns=columns,
+            rows=review_rows_by_key[key],
+            fill_columns=fill_columns,
+            dropdowns=dropdowns,
+            DataValidation=DataValidation,
+            get_column_letter=get_column_letter,
+            Alignment=Alignment,
+            Border=Border,
+            Font=Font,
+            PatternFill=PatternFill,
+            Side=Side,
+        )
+
+    instructions = workbook.create_sheet("Instructions")
+    _write_instructions_sheet(
+        ws=instructions,
+        Alignment=Alignment,
+        Font=Font,
+        PatternFill=PatternFill,
+    )
+
+    workbook_path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(workbook_path)
+    workbook.close()
+
+    return ReviewWorkbookSummary(
+        workbook_path=workbook_path,
+        source_review_pack_dir=review_pack_dir,
+        sheet_counts=sheet_counts,
+        approved_count=approved_count,
+    )
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -1959,9 +2290,19 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Write private mapping review CSVs and README under import_validation_reports/monday_review_pack.",
     )
     parser.add_argument(
+        "--write-review-workbook",
+        action="store_true",
+        help="Write a private Excel review workbook from existing Monday mapping review CSVs.",
+    )
+    parser.add_argument(
         "--review-output-dir",
         type=Path,
         default=repo_root / "import_validation_reports" / "monday_review_pack",
+    )
+    parser.add_argument(
+        "--review-workbook-path",
+        type=Path,
+        default=repo_root / "import_validation_reports" / "monday_review_pack" / "monday_mapping_review.xlsx",
     )
     parser.add_argument(
         "--max-review-rows",
@@ -1990,6 +2331,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     leads_path = args.leads or _default_export_path(export_dir, "leads")
     orders_path = args.orders or _default_export_path(export_dir, "orders")
     sites_path = args.sites or _default_export_path(export_dir, "sites")
+
+    if args.write_review_workbook and not args.write_review_pack and not args.apply_reviewed_mappings:
+        try:
+            workbook_summary = generate_monday_review_workbook(
+                review_pack_dir=args.review_pack_dir,
+                workbook_path=args.review_workbook_path,
+            )
+        except (ReviewedMappingError, RuntimeError) as error:
+            print(f"Could not write review workbook: {error}", file=sys.stderr)
+            print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+            return 2
+
+        print("Created Monday mapping review workbook for human review only.")
+        print(f"  Workbook:     {workbook_summary.workbook_path}")
+        print(f"  Review pack:  {workbook_summary.source_review_pack_dir}")
+        print(f"  Unresolved site rows: {workbook_summary.sheet_counts['unresolved_sites']}")
+        print(f"  Client status rows:   {workbook_summary.sheet_counts['client_status']}")
+        print(f"  Duplicate site rows:  {workbook_summary.sheet_counts['duplicate_sites']}")
+        print(f"  Status default rows:  {workbook_summary.sheet_counts['status_defaults']}")
+        print(f"  Approved rows:        {workbook_summary.approved_count}")
+        print("Safety: no database writes, no imports, no provider calls.")
+        return 0
+
     for path in (contacts_path, leads_path, orders_path, sites_path):
         if not path.exists():
             print(f"Missing Monday export file: {path}", file=sys.stderr)
@@ -2057,6 +2421,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else "medium",
     )
     review_summary = None
+    workbook_summary = None
     if args.write_review_pack:
         review_summary = generate_monday_review_pack(
             contacts_path=contacts_path,
@@ -2068,6 +2433,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_sites=site_limit,
             max_review_rows=args.max_review_rows,
         )
+        if args.write_review_workbook:
+            workbook_summary = generate_monday_review_workbook(
+                review_pack_dir=review_summary.output_dir,
+                workbook_path=args.review_workbook_path,
+            )
     print("Prepared Monday sample for validation only.")
     print(f"  Clients rows: {summary.clients_written}")
     print(f"  Sites rows:   {summary.sites_written}")
@@ -2082,6 +2452,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"    Client status rows:   {review_summary.client_status_rows}")
         print(f"    Duplicate site rows:  {review_summary.duplicate_site_rows}")
         print(f"    Status default rows:  {review_summary.status_default_rows}")
+    if workbook_summary is not None:
+        print(f"  Review workbook: {workbook_summary.workbook_path}")
+        print(f"    Approved rows: {workbook_summary.approved_count}")
     print("Safety: no database writes, no imports, no provider calls.")
     return 0
 

@@ -208,7 +208,69 @@ Do not proceed to import until:
 
 After Bryce completes the review, generate a larger private validation sample using only reviewed mappings. Do not import yet.
 
-## 11. How to apply Bryce-reviewed mappings
+## 11. Review Mapping Workbook
+
+The review workbook is a private Excel convenience layer over the review CSVs. It is for human review only. It does not import data, write the database, run migrations, run V1 migration apply, or call Outlook, Gmail, Google Drive, or OpenAI.
+
+Generate it from the repo root:
+
+```powershell
+.\scripts\create-monday-review-workbook.ps1 -Open
+```
+
+Equivalent Python command:
+
+```powershell
+.\apps\api\.venv\Scripts\python apps\api\scripts\prepare_monday_tiny_sample.py `
+  --write-review-workbook `
+  --review-pack-dir "import_validation_reports\monday_review_pack" `
+  --review-workbook-path "import_validation_reports\monday_review_pack\monday_mapping_review.xlsx"
+```
+
+The workbook is written to:
+
+```text
+import_validation_reports/monday_review_pack/monday_mapping_review.xlsx
+```
+
+The workbook is private and ignored. Do not commit it, paste row contents into public systems, or use it as an import source.
+
+Workbook tabs:
+
+- `Overview`: generated time, source review pack path, row counts, approved count, and private-file warning.
+- `Unresolved Sites`: sites that need Bryce to decide the correct client link, status, or exclusion decision.
+- `Client Status Review`: clients whose Monday status needs a reviewed V2 client status.
+- `Duplicate Sites`: duplicate Site ID rows that need one keep/skip-style decision per row.
+- `Status Defaults`: selected sample sites whose raw status defaulted to active for validation only.
+- `Instructions`: short review checklist.
+
+Bryce should fill:
+
+- `manual_client_external_id` only when the correct client is known.
+- `manual_status` only with a reviewed site status: `active`, `inactive`, `on_hold`, or `archived`.
+- `suggested_status` only with a reviewed client status: `active`, `inactive`, `prospect`, or `archived`.
+- `review_status` with `approved`, `skip`, `needs_source_fix`, or `needs_followup`.
+- `keep_or_skip` with `keep`, `skip`, `needs_source_fix`, or `needs_followup` as a review note. Before running the applier, every duplicate row must still resolve to an applier-safe decision.
+- `notes` when the decision needs context.
+
+Review steps:
+
+1. Review `Unresolved Sites`.
+2. Fill `manual_client_external_id` only when you know the correct client.
+3. Set `review_status` to `approved` only when the row is safe.
+4. Use `skip` for rows that should not import.
+5. Use `needs_source_fix` for bad source data.
+6. Use `needs_followup` if Bryce/Tom needs to decide.
+7. Review `Client Status Review` and set `suggested_status`.
+8. Review `Duplicate Sites` and mark keep/skip decisions.
+9. Review `Status Defaults` and approve or set `manual_status`.
+10. Save the workbook.
+11. Export or save review tabs back to the original CSV filenames only after confirming the headers match the review CSVs.
+12. Do not import from this workbook directly.
+
+After workbook review, update/export the review CSVs in `import_validation_reports/monday_review_pack/`, then run the reviewed mapping applier. The current helper writes the workbook only; it intentionally does not write CSVs back from Excel.
+
+## 12. How to apply Bryce-reviewed mappings
 
 The reviewed mapping applier reads only the private review CSVs and private Monday exports, then writes a new private Clients/Sites validation sample. It still does not import data, write the database, run migrations, run the V1 apply path, or call Outlook, Gmail, Google Drive, or OpenAI.
 
@@ -274,7 +336,7 @@ Do not commit:
 - `docs/import_templates/v2/private/sites_reviewed_sample.csv`
 - anything under `import_validation_reports/reviewed_sample/`
 
-## 12. How to read validator results
+## 13. How to read validator results
 
 Start with the console summary:
 
@@ -288,7 +350,7 @@ Start with the console summary:
 
 Open the Markdown report for exact row numbers and field-level messages.
 
-## 13. Stop conditions
+## 14. Stop conditions
 
 Stop and fix the private CSVs when any of these appear:
 
@@ -305,7 +367,7 @@ Stop and fix the private CSVs when any of these appear:
 
 No orphan Sites. No weak Client mapping. No blind import.
 
-## 14. What files must never be committed
+## 15. What files must never be committed
 
 Never commit:
 
@@ -324,7 +386,7 @@ Never commit:
 
 The committed templates are safe. Private copies and reports are not.
 
-## 15. Next step after clean validation
+## 16. Next step after clean validation
 
 After a clean tiny validation:
 
