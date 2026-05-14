@@ -42,6 +42,87 @@ SITE_STATUS_MAPPING_REVIEW_ROWS = (
     ("Any other raw value", "active for validation sample only", "Do not import until Bryce reviews."),
 )
 
+UNRESOLVED_SITES_REVIEW_COLUMNS = (
+    "source_row_number",
+    "site_id",
+    "site_name_or_label",
+    "client_id",
+    "client_candidate",
+    "exclusion_reason",
+    "diagnostic_bucket",
+    "suggested_fix",
+    "manual_client_external_id",
+    "manual_status",
+    "review_status",
+    "notes",
+)
+
+CLIENT_STATUS_REVIEW_COLUMNS = (
+    "source_row_number",
+    "client_id",
+    "client_name_or_label",
+    "raw_client_status",
+    "current_mapping",
+    "suggested_status",
+    "review_status",
+    "notes",
+)
+
+DUPLICATE_SITES_REVIEW_COLUMNS = (
+    "source_row_number",
+    "site_id",
+    "site_name_or_label",
+    "duplicate_group",
+    "suggested_action",
+    "keep_or_skip",
+    "notes",
+)
+
+STATUS_DEFAULTS_REVIEW_COLUMNS = (
+    "source_row_number",
+    "site_id",
+    "site_name_or_label",
+    "raw_site_status",
+    "defaulted_status",
+    "review_status",
+    "manual_status",
+    "notes",
+)
+
+SITE_REVIEW_BUCKET_LABELS = {
+    "site_id_not_found_in_leads": "Site IDs not found in Leads",
+    "site_has_no_client_id": "sites with no Client ID",
+    "linked_client_unmapped_client_status": "linked to clients with unmapped client status",
+    "no_reviewable_client_candidate": "no reviewable client candidate",
+    "client_id_not_found_in_contacts": "Client IDs not found in Contacts",
+    "duplicate_site_id_in_site_information": "duplicate Site ID rows",
+    "blank_site_id": "blank Site ID rows",
+    "ambiguous_site_to_client_link": "ambiguous Site ID to Client ID link",
+    "linked_client_ambiguous_account_name": "linked client ambiguous account name",
+    "missing_site_name": "missing site name",
+}
+
+SITE_REVIEW_SUGGESTED_FIXES = {
+    "site_id_not_found_in_leads": (
+        "Confirm the Leads Site ID link, then fill manual_client_external_id or update the Monday source."
+    ),
+    "site_has_no_client_id": "Fill the missing Client ID in Leads or provide manual_client_external_id.",
+    "linked_client_unmapped_client_status": (
+        "Review the linked client in client_status_review.csv, then set a reviewed client status."
+    ),
+    "no_reviewable_client_candidate": (
+        "Create or choose a reviewable client candidate, then fill manual_client_external_id."
+    ),
+    "client_id_not_found_in_contacts": (
+        "Confirm the Contacts Client ID exists or provide a reviewed existing client_external_id."
+    ),
+    "duplicate_site_id_in_site_information": "Use duplicate_sites_review.csv to choose keep, skip, or merge.",
+    "blank_site_id": "Fill the Site ID in Monday or mark the row skip after review.",
+    "ambiguous_site_to_client_link": "Resolve the single correct Client ID, then fill manual_client_external_id.",
+    "linked_client_ambiguous_account_name": "Resolve the client's canonical account name before importing this site.",
+    "missing_site_name": "Fill the site name in Monday or mark the row skip after review.",
+}
+
 
 @dataclass(frozen=True)
 class TableData:
@@ -63,6 +144,41 @@ class PrepSummary:
     clients_path: Path
     sites_path: Path
     report_path: Path
+
+
+@dataclass(frozen=True)
+class ReviewPackSummary:
+    output_dir: Path
+    files: dict[str, Path]
+    diagnostic_bucket_counts: dict[str, int]
+    client_status_rows: int
+    duplicate_site_rows: int
+    status_default_rows: int
+    readme_path: Path
+
+
+@dataclass(frozen=True)
+class MondayAnalysis:
+    tables: dict[str, TableData]
+    client_account_names: dict[str, set[str]]
+    client_contact_rows: dict[str, list[dict[str, str]]]
+    all_contact_client_ids: set[str]
+    contact_skips: Counter[str]
+    client_candidates: dict[str, dict[str, str]]
+    client_rejections: Counter[str]
+    client_rejection_reason_by_id: dict[str, str]
+    site_to_client_ids: dict[str, set[str]]
+    lead_blank_client_by_site: Counter[str]
+    site_rejections: Counter[str]
+    relationship_reasons: Counter[str]
+    unresolved_site_ids: Counter[str]
+    unresolved_client_ids: Counter[str]
+    site_status_counts: Counter[str]
+    site_rows_by_id: dict[str, list[dict[str, str]]]
+    candidate_sites: list[tuple[str, str, dict[str, str]]]
+    unresolved_site_review_rows: list[dict[str, str]]
+    client_status_review_rows: list[dict[str, str]]
+    duplicate_site_review_rows: list[dict[str, str]]
 
 
 def clean(value: Any) -> str:
@@ -286,6 +402,312 @@ def _source_rows(tables: dict[str, TableData]) -> list[tuple[str, str, int, str]
     ]
 
 
+def _source_row_number(row: dict[str, str]) -> str:
+    return clean(row.get("__rownum__"))
+
+
+def _site_name_or_label(row: dict[str, str]) -> str:
+    return clean(row.get("Name")) or clean(row.get("Site Name")) or clean(row.get("Item Name")) or "<blank site name>"
+
+
+def _client_name_or_label(row: dict[str, str]) -> str:
+    contact_name = " ".join(
+        part for part in (clean(row.get("First Name")), clean(row.get("Last Name"))) if part
+    )
+    return clean(row.get("Account")) or contact_name or clean(row.get("Name")) or "<blank client name>"
+
+
+def _client_candidate_label(
+    client_id: str,
+    client_contact_rows: dict[str, list[dict[str, str]]],
+) -> str:
+    rows = client_contact_rows.get(client_id, [])
+    for row in rows:
+        label = _client_name_or_label(row)
+        if label and not label.startswith("<blank"):
+            return label
+    return ""
+
+
+def _site_review_bucket(reason: str) -> str:
+    return SITE_REVIEW_BUCKET_LABELS.get(reason, reason)
+
+
+def _site_review_suggested_fix(reason: str) -> str:
+    return SITE_REVIEW_SUGGESTED_FIXES.get(reason, "Review this row before any import.")
+
+
+def _unresolved_site_review_row(
+    *,
+    site_row: dict[str, str],
+    reason: str,
+    client_id: str = "",
+    client_candidate: str = "",
+) -> dict[str, str]:
+    return {
+        "source_row_number": _source_row_number(site_row),
+        "site_id": clean(site_row.get("Site ID")),
+        "site_name_or_label": _site_name_or_label(site_row),
+        "client_id": client_id,
+        "client_candidate": client_candidate,
+        "exclusion_reason": reason,
+        "diagnostic_bucket": _site_review_bucket(reason),
+        "suggested_fix": _site_review_suggested_fix(reason),
+        "manual_client_external_id": "",
+        "manual_status": "",
+        "review_status": "",
+        "notes": "",
+    }
+
+
+def _duplicate_site_review_row(site_row: dict[str, str], duplicate_group: str) -> dict[str, str]:
+    return {
+        "source_row_number": _source_row_number(site_row),
+        "site_id": clean(site_row.get("Site ID")),
+        "site_name_or_label": _site_name_or_label(site_row),
+        "duplicate_group": duplicate_group,
+        "suggested_action": "Choose one canonical row to keep, then mark the others skip or merge.",
+        "keep_or_skip": "",
+        "notes": "",
+    }
+
+
+def _client_status_review_row(row: dict[str, str]) -> dict[str, str]:
+    raw_status = clean(row.get("Active Status"))
+    return {
+        "source_row_number": _source_row_number(row),
+        "client_id": clean(row.get("Client ID")),
+        "client_name_or_label": _client_name_or_label(row),
+        "raw_client_status": raw_status,
+        "current_mapping": _map_client_status(raw_status),
+        "suggested_status": "",
+        "review_status": "",
+        "notes": "Fill suggested_status with active, inactive, prospect, or archived before import.",
+    }
+
+
+def _status_default_review_row(site_row: dict[str, str], defaulted_status: str) -> dict[str, str]:
+    return {
+        "source_row_number": _source_row_number(site_row),
+        "site_id": clean(site_row.get("Site ID")),
+        "site_name_or_label": _site_name_or_label(site_row),
+        "raw_site_status": _raw_status_label(site_row.get("Status")),
+        "defaulted_status": defaulted_status,
+        "review_status": "",
+        "manual_status": "",
+        "notes": "Defaulted for validation only. Fill manual_status before import if needed.",
+    }
+
+
+def _analyze_monday_exports(tables: dict[str, TableData]) -> MondayAnalysis:
+    client_account_names: dict[str, set[str]] = defaultdict(set)
+    client_contact_rows: dict[str, list[dict[str, str]]] = defaultdict(list)
+    all_contact_client_ids: set[str] = set()
+    contact_skips: Counter[str] = Counter()
+    for row in tables["contacts"].rows:
+        client_id = clean(row.get("Client ID"))
+        account = clean(row.get("Account"))
+        if not client_id:
+            contact_skips["blank_client_id"] += 1
+            continue
+        all_contact_client_ids.add(client_id)
+        if not account:
+            contact_skips["blank_account"] += 1
+            continue
+        client_account_names[client_id].add(_normalized_name(account))
+        client_contact_rows[client_id].append(row)
+
+    client_candidates: dict[str, dict[str, str]] = {}
+    client_rejections: Counter[str] = Counter()
+    client_rejection_reason_by_id: dict[str, str] = {}
+    client_status_review_rows: list[dict[str, str]] = []
+    for client_id, contact_rows in client_contact_rows.items():
+        account_keys = client_account_names[client_id]
+        if len(account_keys) != 1:
+            client_rejections["ambiguous_account_name"] += len(contact_rows)
+            client_rejection_reason_by_id[client_id] = "ambiguous_account_name"
+            continue
+        chosen = contact_rows[0]
+        status = _map_client_status(chosen.get("Active Status", ""))
+        if not status:
+            client_rejections["unmapped_client_status"] += len(contact_rows)
+            client_rejection_reason_by_id[client_id] = "unmapped_client_status"
+            client_status_review_rows.extend(_client_status_review_row(row) for row in contact_rows)
+            continue
+        email = clean(chosen.get("Email"))
+        if email and not _valid_email(email):
+            email = ""
+        contact_name = (
+            " ".join(part for part in [clean(chosen.get("First Name")), clean(chosen.get("Last Name"))] if part)
+            or clean(chosen.get("Name"))
+        )
+        client_candidates[client_id] = {
+            "account": clean(chosen.get("Account")),
+            "status": status,
+            "primary_contact_name": contact_name,
+            "email": email,
+            "phone": clean(chosen.get("Phone")),
+            "source_row": clean(chosen.get("__rownum__")),
+        }
+
+    site_to_client_ids: dict[str, set[str]] = defaultdict(set)
+    lead_site_ids_seen: set[str] = set()
+    lead_blank_client_by_site: Counter[str] = Counter()
+    for row in tables["leads"].rows:
+        site_id = clean(row.get("Site ID"))
+        client_id = clean(row.get("Client ID"))
+        if not site_id:
+            continue
+        lead_site_ids_seen.add(site_id)
+        if client_id:
+            site_to_client_ids[site_id].add(client_id)
+        else:
+            lead_blank_client_by_site[site_id] += 1
+
+    site_rejections: Counter[str] = Counter()
+    relationship_reasons: Counter[str] = Counter()
+    unresolved_site_ids: Counter[str] = Counter()
+    unresolved_client_ids: Counter[str] = Counter()
+    site_status_counts: Counter[str] = Counter()
+    site_rows_by_id: dict[str, list[dict[str, str]]] = defaultdict(list)
+    unresolved_site_review_rows: list[dict[str, str]] = []
+    for row in tables["sites"].rows:
+        site_status_counts[_raw_status_label(row.get("Status"))] += 1
+        if _invalid_address_fields(row):
+            relationship_reasons["invalid_address_fields"] += 1
+        site_id = clean(row.get("Site ID"))
+        if not site_id:
+            site_rejections["blank_site_id"] += 1
+            relationship_reasons["blank_site_id"] += 1
+            unresolved_site_review_rows.append(
+                _unresolved_site_review_row(site_row=row, reason="blank_site_id"),
+            )
+            continue
+        site_rows_by_id[site_id].append(row)
+
+    duplicate_site_review_rows: list[dict[str, str]] = []
+    candidate_sites: list[tuple[str, str, dict[str, str]]] = []
+    for site_id, site_rows in site_rows_by_id.items():
+        if len(site_rows) != 1:
+            reason = "duplicate_site_id_in_site_information"
+            site_rejections[reason] += len(site_rows)
+            unresolved_site_ids[site_id] += len(site_rows)
+            duplicate_group = f"site_id:{site_id}"
+            for site_row in site_rows:
+                duplicate_site_review_rows.append(_duplicate_site_review_row(site_row, duplicate_group))
+                unresolved_site_review_rows.append(
+                    _unresolved_site_review_row(site_row=site_row, reason=reason),
+                )
+            continue
+        site_row = site_rows[0]
+        if not clean(site_row.get("Name")):
+            reason = "missing_site_name"
+            site_rejections[reason] += 1
+            relationship_reasons[reason] += 1
+            unresolved_site_ids[site_id] += 1
+            unresolved_site_review_rows.append(
+                _unresolved_site_review_row(site_row=site_row, reason=reason),
+            )
+            continue
+        linked_clients = site_to_client_ids.get(site_id, set())
+        if len(linked_clients) != 1:
+            if len(linked_clients) > 1:
+                reason = "ambiguous_site_to_client_link"
+            elif site_id in lead_blank_client_by_site:
+                reason = "site_has_no_client_id"
+            else:
+                reason = "site_id_not_found_in_leads"
+            site_rejections[reason] += 1
+            relationship_reasons[reason] += 1
+            unresolved_site_ids[site_id] += 1
+            unresolved_site_review_rows.append(
+                _unresolved_site_review_row(site_row=site_row, reason=reason),
+            )
+            continue
+        client_id = next(iter(linked_clients))
+        if client_id not in client_candidates:
+            client_reason = client_rejection_reason_by_id.get(client_id)
+            if client_id not in all_contact_client_ids:
+                reason = "client_id_not_found_in_contacts"
+            elif client_reason == "ambiguous_account_name":
+                reason = "linked_client_ambiguous_account_name"
+            elif client_reason == "unmapped_client_status":
+                reason = "linked_client_unmapped_client_status"
+            else:
+                reason = "no_reviewable_client_candidate"
+            site_rejections[reason] += 1
+            relationship_reasons[reason] += 1
+            unresolved_client_ids[client_id] += 1
+            unresolved_site_review_rows.append(
+                _unresolved_site_review_row(
+                    site_row=site_row,
+                    reason=reason,
+                    client_id=client_id,
+                    client_candidate=_client_candidate_label(client_id, client_contact_rows),
+                ),
+            )
+            continue
+        candidate_sites.append((site_id, client_id, site_row))
+
+    return MondayAnalysis(
+        tables=tables,
+        client_account_names=client_account_names,
+        client_contact_rows=client_contact_rows,
+        all_contact_client_ids=all_contact_client_ids,
+        contact_skips=contact_skips,
+        client_candidates=client_candidates,
+        client_rejections=client_rejections,
+        client_rejection_reason_by_id=client_rejection_reason_by_id,
+        site_to_client_ids=site_to_client_ids,
+        lead_blank_client_by_site=lead_blank_client_by_site,
+        site_rejections=site_rejections,
+        relationship_reasons=relationship_reasons,
+        unresolved_site_ids=unresolved_site_ids,
+        unresolved_client_ids=unresolved_client_ids,
+        site_status_counts=site_status_counts,
+        site_rows_by_id=site_rows_by_id,
+        candidate_sites=candidate_sites,
+        unresolved_site_review_rows=unresolved_site_review_rows,
+        client_status_review_rows=client_status_review_rows,
+        duplicate_site_review_rows=duplicate_site_review_rows,
+    )
+
+
+def _select_sample_sites(
+    candidate_sites: Sequence[tuple[str, str, dict[str, str]]],
+    *,
+    max_clients: int,
+    max_sites: int,
+) -> tuple[list[str], list[tuple[str, str, dict[str, str]]]]:
+    sites_by_client: dict[str, list[tuple[str, str, dict[str, str]]]] = defaultdict(list)
+    client_order: list[str] = []
+    for site in candidate_sites:
+        _site_id, client_id, _site_row = site
+        sites_by_client[client_id].append(site)
+        if client_id not in client_order:
+            client_order.append(client_id)
+
+    selected_clients = client_order[:max_clients]
+    selected_sites: list[tuple[str, str, dict[str, str]]] = []
+    per_client_first_pass = max(1, min(2, max_sites))
+    for client_id in selected_clients:
+        for site in sites_by_client[client_id][:per_client_first_pass]:
+            if len(selected_sites) < max_sites:
+                selected_sites.append(site)
+    for client_id in selected_clients:
+        for site in sites_by_client[client_id][per_client_first_pass:]:
+            if len(selected_sites) >= max_sites:
+                break
+            selected_sites.append(site)
+        if len(selected_sites) >= max_sites:
+            break
+
+    selected_client_ids = list(dict.fromkeys(client_id for _site_id, client_id, _site_row in selected_sites))
+    selected_client_ids = selected_client_ids[:max_clients]
+    selected_sites = [site for site in selected_sites if site[1] in set(selected_client_ids)][:max_sites]
+    return selected_client_ids, selected_sites
+
+
 def _render_mapping_report(
     *,
     tables: dict[str, TableData],
@@ -481,158 +903,18 @@ def prepare_tiny_sample(
         "sites": read_table(sites_path),
     }
 
-    client_account_names: dict[str, set[str]] = defaultdict(set)
-    client_contact_rows: dict[str, list[dict[str, str]]] = defaultdict(list)
-    all_contact_client_ids: set[str] = set()
-    contact_skips: Counter[str] = Counter()
-    for row in tables["contacts"].rows:
-        client_id = clean(row.get("Client ID"))
-        account = clean(row.get("Account"))
-        if not client_id:
-            contact_skips["blank_client_id"] += 1
-            continue
-        all_contact_client_ids.add(client_id)
-        if not account:
-            contact_skips["blank_account"] += 1
-            continue
-        client_account_names[client_id].add(_normalized_name(account))
-        client_contact_rows[client_id].append(row)
-
-    client_candidates: dict[str, dict[str, str]] = {}
-    client_rejections: Counter[str] = Counter()
-    client_rejection_reason_by_id: dict[str, str] = {}
-    for client_id, contact_rows in client_contact_rows.items():
-        account_keys = client_account_names[client_id]
-        if len(account_keys) != 1:
-            client_rejections["ambiguous_account_name"] += len(contact_rows)
-            client_rejection_reason_by_id[client_id] = "ambiguous_account_name"
-            continue
-        chosen = contact_rows[0]
-        status = _map_client_status(chosen.get("Active Status", ""))
-        if not status:
-            client_rejections["unmapped_client_status"] += len(contact_rows)
-            client_rejection_reason_by_id[client_id] = "unmapped_client_status"
-            continue
-        email = clean(chosen.get("Email"))
-        if email and not _valid_email(email):
-            email = ""
-        contact_name = (
-            " ".join(part for part in [clean(chosen.get("First Name")), clean(chosen.get("Last Name"))] if part)
-            or clean(chosen.get("Name"))
-        )
-        client_candidates[client_id] = {
-            "account": clean(chosen.get("Account")),
-            "status": status,
-            "primary_contact_name": contact_name,
-            "email": email,
-            "phone": clean(chosen.get("Phone")),
-            "source_row": clean(chosen.get("__rownum__")),
-        }
-
-    site_to_client_ids: dict[str, set[str]] = defaultdict(set)
-    lead_site_ids_seen: set[str] = set()
-    lead_blank_client_by_site: Counter[str] = Counter()
-    for row in tables["leads"].rows:
-        site_id = clean(row.get("Site ID"))
-        client_id = clean(row.get("Client ID"))
-        if not site_id:
-            continue
-        lead_site_ids_seen.add(site_id)
-        if client_id:
-            site_to_client_ids[site_id].add(client_id)
-        else:
-            lead_blank_client_by_site[site_id] += 1
-
-    site_rejections: Counter[str] = Counter()
-    relationship_reasons: Counter[str] = Counter()
-    unresolved_site_ids: Counter[str] = Counter()
-    unresolved_client_ids: Counter[str] = Counter()
-    site_status_counts: Counter[str] = Counter()
-    site_rows_by_id: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for row in tables["sites"].rows:
-        site_status_counts[_raw_status_label(row.get("Status"))] += 1
-        if _invalid_address_fields(row):
-            relationship_reasons["invalid_address_fields"] += 1
-        site_id = clean(row.get("Site ID"))
-        if not site_id:
-            site_rejections["blank_site_id"] += 1
-            relationship_reasons["blank_site_id"] += 1
-            continue
-        site_rows_by_id[site_id].append(row)
-
-    candidate_sites: list[tuple[str, str, dict[str, str]]] = []
-    for site_id, site_rows in site_rows_by_id.items():
-        if len(site_rows) != 1:
-            site_rejections["duplicate_site_id_in_site_information"] += len(site_rows)
-            unresolved_site_ids[site_id] += len(site_rows)
-            continue
-        site_row = site_rows[0]
-        if not clean(site_row.get("Name")):
-            site_rejections["missing_site_name"] += 1
-            relationship_reasons["missing_site_name"] += 1
-            unresolved_site_ids[site_id] += 1
-            continue
-        linked_clients = site_to_client_ids.get(site_id, set())
-        if len(linked_clients) != 1:
-            if len(linked_clients) > 1:
-                reason = "ambiguous_site_to_client_link"
-            elif site_id in lead_blank_client_by_site:
-                reason = "site_has_no_client_id"
-            else:
-                reason = "site_id_not_found_in_leads"
-            site_rejections[reason] += 1
-            relationship_reasons[reason] += 1
-            unresolved_site_ids[site_id] += 1
-            continue
-        client_id = next(iter(linked_clients))
-        if client_id not in client_candidates:
-            client_reason = client_rejection_reason_by_id.get(client_id)
-            if client_id not in all_contact_client_ids:
-                reason = "client_id_not_found_in_contacts"
-            elif client_reason == "ambiguous_account_name":
-                reason = "linked_client_ambiguous_account_name"
-            elif client_reason == "unmapped_client_status":
-                reason = "linked_client_unmapped_client_status"
-            else:
-                reason = "no_reviewable_client_candidate"
-            site_rejections[reason] += 1
-            relationship_reasons[reason] += 1
-            unresolved_client_ids[client_id] += 1
-            continue
-        candidate_sites.append((site_id, client_id, site_row))
-
-    sites_by_client: dict[str, list[tuple[str, str, dict[str, str]]]] = defaultdict(list)
-    client_order: list[str] = []
-    for site in candidate_sites:
-        _site_id, client_id, _site_row = site
-        sites_by_client[client_id].append(site)
-        if client_id not in client_order:
-            client_order.append(client_id)
-
-    selected_clients = client_order[:max_clients]
-    selected_sites: list[tuple[str, str, dict[str, str]]] = []
-    per_client_first_pass = max(1, min(2, max_sites))
-    for client_id in selected_clients:
-        for site in sites_by_client[client_id][:per_client_first_pass]:
-            if len(selected_sites) < max_sites:
-                selected_sites.append(site)
-    for client_id in selected_clients:
-        for site in sites_by_client[client_id][per_client_first_pass:]:
-            if len(selected_sites) >= max_sites:
-                break
-            selected_sites.append(site)
-        if len(selected_sites) >= max_sites:
-            break
-
-    selected_client_ids = list(dict.fromkeys(client_id for _site_id, client_id, _site_row in selected_sites))
-    selected_clients = selected_client_ids[:max_clients]
-    selected_sites = [site for site in selected_sites if site[1] in set(selected_clients)][:max_sites]
+    analysis = _analyze_monday_exports(tables)
+    selected_clients, selected_sites = _select_sample_sites(
+        analysis.candidate_sites,
+        max_clients=max_clients,
+        max_sites=max_sites,
+    )
 
     client_headers = _read_template_headers(clients_template_path)
     site_headers = _read_template_headers(sites_template_path)
     client_rows_out = []
     for client_id in selected_clients:
-        client = client_candidates[client_id]
+        client = analysis.client_candidates[client_id]
         row = {header: "" for header in client_headers}
         row.update(
             {
@@ -707,16 +989,16 @@ def prepare_tiny_sample(
         sample_label=sample_label,
         client_rows=client_rows_out,
         site_rows=site_rows_out,
-        candidate_sites=len(candidate_sites),
-        site_rejections=site_rejections,
-        client_rejections=client_rejections,
-        contact_skips=contact_skips,
-        relationship_reasons=relationship_reasons,
-        unresolved_site_ids=unresolved_site_ids,
-        unresolved_client_ids=unresolved_client_ids,
-        site_rows_by_id=site_rows_by_id,
-        client_account_names=client_account_names,
-        site_status_counts=site_status_counts,
+        candidate_sites=len(analysis.candidate_sites),
+        site_rejections=analysis.site_rejections,
+        client_rejections=analysis.client_rejections,
+        contact_skips=analysis.contact_skips,
+        relationship_reasons=analysis.relationship_reasons,
+        unresolved_site_ids=analysis.unresolved_site_ids,
+        unresolved_client_ids=analysis.unresolved_client_ids,
+        site_rows_by_id=analysis.site_rows_by_id,
+        client_account_names=analysis.client_account_names,
+        site_status_counts=analysis.site_status_counts,
         site_status_default_reasons=site_status_default_reasons,
         site_status_defaulted=site_status_defaulted,
         site_urls_omitted=site_urls_omitted,
@@ -727,14 +1009,206 @@ def prepare_tiny_sample(
     return PrepSummary(
         clients_written=len(client_rows_out),
         sites_written=len(site_rows_out),
-        candidate_sites=len(candidate_sites),
-        site_rejections=dict(site_rejections),
-        client_rejections=dict(client_rejections),
+        candidate_sites=len(analysis.candidate_sites),
+        site_rejections=dict(analysis.site_rejections),
+        client_rejections=dict(analysis.client_rejections),
         site_status_defaulted=site_status_defaulted,
         site_urls_omitted=site_urls_omitted,
         clients_path=clients_output_path,
         sites_path=sites_output_path,
         report_path=report_path,
+    )
+
+
+def _limit_review_rows(
+    rows: Sequence[dict[str, str]],
+    max_review_rows: int | None,
+) -> list[dict[str, str]]:
+    if max_review_rows is None:
+        return list(rows)
+    if max_review_rows < 1:
+        raise ValueError("max_review_rows must be at least 1 when provided.")
+    return list(rows[:max_review_rows])
+
+
+def _review_pack_readme(
+    *,
+    output_dir: Path,
+    files: dict[str, Path],
+    diagnostic_bucket_counts: Counter[str],
+    total_unresolved_site_rows: int,
+    total_client_status_rows: int,
+    total_duplicate_site_rows: int,
+    total_status_default_rows: int,
+    written_unresolved_site_rows: int,
+    written_client_status_rows: int,
+    written_duplicate_site_rows: int,
+    written_status_default_rows: int,
+    max_review_rows: int | None,
+) -> str:
+    bucket_rows = sorted(diagnostic_bucket_counts.items())
+    cap_lines = (
+        [
+            f"- Row cap: first {max_review_rows} rows per review CSV were written.",
+            "- Counts below still describe the full analyzed source exports.",
+        ]
+        if max_review_rows is not None
+        else ["- Row cap: none."]
+    )
+    lines = [
+        "# Monday Mapping Review Pack",
+        "",
+        f"- Generated at: `{datetime.now(timezone.utc).isoformat()}`",
+        f"- Output folder: `{output_dir}`",
+        "- Purpose: private review of unresolved Monday client, site, and status mappings before any import.",
+        "- Safety: no database writes, no provider calls, no V1 migration apply, and no real import.",
+        "",
+        "## Generated Files",
+        *_markdown_table(
+            ["File", "Rows Written", "Full Rows Analyzed", "Review Purpose"],
+            [
+                (
+                    files["unresolved_sites"].name,
+                    written_unresolved_site_rows,
+                    total_unresolved_site_rows,
+                    "Sites excluded from clear mapping buckets.",
+                ),
+                (
+                    files["client_status"].name,
+                    written_client_status_rows,
+                    total_client_status_rows,
+                    "Clients whose raw Monday status is not mapped to a V2 status.",
+                ),
+                (
+                    files["duplicate_sites"].name,
+                    written_duplicate_site_rows,
+                    total_duplicate_site_rows,
+                    "Duplicate Site ID rows from Site Information.",
+                ),
+                (
+                    files["status_defaults"].name,
+                    written_status_default_rows,
+                    total_status_default_rows,
+                    "Selected sample sites defaulted to active for validation only.",
+                ),
+            ],
+        ),
+        "",
+        "## Row Limits",
+        *cap_lines,
+        "",
+        "## Counts By Diagnostic Bucket",
+        *_markdown_table(["Bucket", "Rows"], bucket_rows),
+        "",
+        "## What Bryce Must Review",
+        "- In `unresolved_sites_review.csv`, resolve each site by filling `manual_client_external_id`, marking `review_status`, or noting why it should be skipped.",
+        "- In `client_status_review.csv`, fill `suggested_status` with one of `active`, `inactive`, `prospect`, or `archived`, then mark `review_status`.",
+        "- In `duplicate_sites_review.csv`, choose one row to keep for each duplicate group and mark the others `skip` or `merge`.",
+        "- In `status_defaults_review.csv`, confirm whether the defaulted `active` status is correct or fill `manual_status` with the reviewed V2 site status.",
+        "",
+        "## Suggested Review Status Values",
+        "- `approved`: Bryce reviewed the row and the manual fields are ready to apply.",
+        "- `skip`: do not import this source row.",
+        "- `needs_source_fix`: fix Monday/source export first, then regenerate.",
+        "- `needs_followup`: not ready for sample expansion or import.",
+        "",
+        "## Stop Conditions",
+        "- Any unresolved site row remains without a reviewed client decision.",
+        "- Any unmapped client status remains without a reviewed V2 status.",
+        "- Any duplicate Site ID group lacks one clear keep/skip/merge decision per row.",
+        "- Any defaulted site status remains unreviewed.",
+        "- Any private export, generated review CSV, validation report, environment file, or local DB file appears staged in git.",
+        "",
+        "## Recommended Next Step",
+        "- After Bryce fills the review CSVs, generate a larger private validation sample using only reviewed mappings.",
+        "- Do not import, write database rows, normalize Jobs/Documents, or call providers from this review pack.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def generate_monday_review_pack(
+    *,
+    contacts_path: Path,
+    leads_path: Path,
+    sites_path: Path,
+    orders_path: Path,
+    output_dir: Path,
+    max_clients: int = TINY_CLIENT_LIMIT,
+    max_sites: int = TINY_SITE_LIMIT,
+    max_review_rows: int | None = None,
+) -> ReviewPackSummary:
+    if max_clients < 1:
+        raise ValueError("max_clients must be at least 1.")
+    if max_sites < 1:
+        raise ValueError("max_sites must be at least 1.")
+    if max_review_rows is not None and max_review_rows < 1:
+        raise ValueError("max_review_rows must be at least 1 when provided.")
+
+    tables = {
+        "contacts": read_table(contacts_path),
+        "leads": read_table(leads_path),
+        "orders": read_table(orders_path),
+        "sites": read_table(sites_path),
+    }
+    analysis = _analyze_monday_exports(tables)
+    _selected_clients, selected_sites = _select_sample_sites(
+        analysis.candidate_sites,
+        max_clients=max_clients,
+        max_sites=max_sites,
+    )
+    status_default_review_rows = []
+    for _site_id, _client_id, site_row in selected_sites:
+        defaulted_status, status_defaulted = _map_site_status(site_row.get("Status", ""))
+        if status_defaulted:
+            status_default_review_rows.append(_status_default_review_row(site_row, defaulted_status))
+
+    diagnostic_bucket_counts: Counter[str] = Counter(
+        row["diagnostic_bucket"] for row in analysis.unresolved_site_review_rows
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    files = {
+        "unresolved_sites": output_dir / "unresolved_sites_review.csv",
+        "client_status": output_dir / "client_status_review.csv",
+        "duplicate_sites": output_dir / "duplicate_sites_review.csv",
+        "status_defaults": output_dir / "status_defaults_review.csv",
+        "readme": output_dir / "README.md",
+    }
+
+    unresolved_rows = _limit_review_rows(analysis.unresolved_site_review_rows, max_review_rows)
+    client_status_rows = _limit_review_rows(analysis.client_status_review_rows, max_review_rows)
+    duplicate_site_rows = _limit_review_rows(analysis.duplicate_site_review_rows, max_review_rows)
+    status_default_rows = _limit_review_rows(status_default_review_rows, max_review_rows)
+
+    _write_csv(files["unresolved_sites"], UNRESOLVED_SITES_REVIEW_COLUMNS, unresolved_rows)
+    _write_csv(files["client_status"], CLIENT_STATUS_REVIEW_COLUMNS, client_status_rows)
+    _write_csv(files["duplicate_sites"], DUPLICATE_SITES_REVIEW_COLUMNS, duplicate_site_rows)
+    _write_csv(files["status_defaults"], STATUS_DEFAULTS_REVIEW_COLUMNS, status_default_rows)
+
+    readme = _review_pack_readme(
+        output_dir=output_dir,
+        files=files,
+        diagnostic_bucket_counts=diagnostic_bucket_counts,
+        total_unresolved_site_rows=len(analysis.unresolved_site_review_rows),
+        total_client_status_rows=len(analysis.client_status_review_rows),
+        total_duplicate_site_rows=len(analysis.duplicate_site_review_rows),
+        total_status_default_rows=len(status_default_review_rows),
+        written_unresolved_site_rows=len(unresolved_rows),
+        written_client_status_rows=len(client_status_rows),
+        written_duplicate_site_rows=len(duplicate_site_rows),
+        written_status_default_rows=len(status_default_rows),
+        max_review_rows=max_review_rows,
+    )
+    files["readme"].write_text(readme, encoding="utf-8")
+
+    return ReviewPackSummary(
+        output_dir=output_dir,
+        files=files,
+        diagnostic_bucket_counts=dict(diagnostic_bucket_counts),
+        client_status_rows=len(analysis.client_status_review_rows),
+        duplicate_site_rows=len(analysis.duplicate_site_review_rows),
+        status_default_rows=len(status_default_review_rows),
+        readme_path=files["readme"],
     )
 
 
@@ -766,6 +1240,21 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--report-output",
         type=Path,
         default=repo_root / "import_validation_reports" / "monday-mapping-review.md",
+    )
+    parser.add_argument(
+        "--write-review-pack",
+        action="store_true",
+        help="Write private mapping review CSVs and README under import_validation_reports/monday_review_pack.",
+    )
+    parser.add_argument(
+        "--review-output-dir",
+        type=Path,
+        default=repo_root / "import_validation_reports" / "monday_review_pack",
+    )
+    parser.add_argument(
+        "--max-review-rows",
+        type=int,
+        help="Optional cap on rows written per review CSV; summary counts still cover the full analyzed exports.",
     )
     parser.add_argument(
         "--clients-template",
@@ -808,6 +1297,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.client_limit <= TINY_CLIENT_LIMIT and args.site_limit <= TINY_SITE_LIMIT
         else "medium",
     )
+    review_summary = None
+    if args.write_review_pack:
+        review_summary = generate_monday_review_pack(
+            contacts_path=contacts_path,
+            leads_path=leads_path,
+            orders_path=orders_path,
+            sites_path=sites_path,
+            output_dir=args.review_output_dir,
+            max_clients=args.client_limit,
+            max_sites=args.site_limit,
+            max_review_rows=args.max_review_rows,
+        )
     print("Prepared Monday sample for validation only.")
     print(f"  Clients rows: {summary.clients_written}")
     print(f"  Sites rows:   {summary.sites_written}")
@@ -816,6 +1317,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  Clients CSV:  {summary.clients_path}")
     print(f"  Sites CSV:    {summary.sites_path}")
     print(f"  Review:       {summary.report_path}")
+    if review_summary is not None:
+        print(f"  Review pack:  {review_summary.output_dir}")
+        print(f"    Unresolved site rows: {sum(review_summary.diagnostic_bucket_counts.values())}")
+        print(f"    Client status rows:   {review_summary.client_status_rows}")
+        print(f"    Duplicate site rows:  {review_summary.duplicate_site_rows}")
+        print(f"    Status default rows:  {review_summary.status_default_rows}")
     print("Safety: no database writes, no imports, no provider calls.")
     return 0
 

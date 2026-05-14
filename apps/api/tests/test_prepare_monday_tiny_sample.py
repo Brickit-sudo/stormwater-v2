@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import socket
+import sqlite3
 import csv
+from collections import Counter
 from pathlib import Path
 
-from scripts.prepare_monday_tiny_sample import prepare_tiny_sample
+from scripts.prepare_monday_tiny_sample import generate_monday_review_pack, prepare_tiny_sample
 from scripts.validate_import_templates import validate_import_templates
 
 
@@ -71,6 +74,68 @@ def _fake_exports(tmp_path: Path) -> dict[str, Path]:
         "Order",
         ["Job Site", "SERVICE", "Scheduled date", "Job ID", "Site ID", "Client ID"],
         [["North Basin", "Inspection", "2026-01-01", "job-001", "site-001", "client-001"]],
+    )
+    return {"contacts": contacts, "leads": leads, "orders": orders, "sites": sites}
+
+
+def _fake_review_exports(tmp_path: Path) -> dict[str, Path]:
+    contacts = tmp_path / "contacts-review.csv"
+    leads = tmp_path / "leads-review.csv"
+    orders = tmp_path / "orders-review.csv"
+    sites = tmp_path / "sites-review.csv"
+    _write_monday_csv(
+        contacts,
+        "Contacts",
+        ["Name", "First Name", "Last Name", "Email", "Phone", "Active Status", "Account", "Client ID"],
+        [
+            ["Alex One", "Alex", "One", "alex.one@example.com", "555-0100", "Active", "Acme Group", "client-good"],
+            [
+                "Blair Two",
+                "Blair",
+                "Two",
+                "blair.two@example.com",
+                "555-0101",
+                "Needs Review",
+                "Beta LLC",
+                "client-unmapped",
+            ],
+            ["Casey Three", "Casey", "Three", "casey.three@example.com", "555-0102", "Active", "", "client-no-account"],
+        ],
+    )
+    _write_monday_csv(
+        leads,
+        "Leads",
+        ["Name", "Site ID", "Client ID"],
+        [
+            ["Good Lead", "site-good", "client-good"],
+            ["No Client Lead", "site-no-client", ""],
+            ["Unmapped Client Lead", "site-unmapped-client", "client-unmapped"],
+            ["Missing Client Lead", "site-client-missing", "client-missing"],
+            ["No Account Lead", "site-no-reviewable", "client-no-account"],
+            ["Duplicate Lead", "site-dup", "client-good"],
+        ],
+    )
+    _write_monday_csv(
+        sites,
+        "Site Information",
+        ["Name", "Site ID", "Address", "CITY", "STATE", "ZIP", "Gdrive", "Status"],
+        [
+            ["Good Site", "site-good", "1 Good Way", "Portland", "ME", "04101", "", "Needs Field Review"],
+            ["No Lead Site", "site-no-lead", "2 Missing Way", "Portland", "ME", "04102", "", "Active"],
+            ["No Client Site", "site-no-client", "3 Link Way", "Portland", "ME", "04103", "", "Active"],
+            ["Unmapped Client Site", "site-unmapped-client", "4 Status Way", "Boston", "MA", "02108", "", "Active"],
+            ["Missing Client Site", "site-client-missing", "5 Contact Way", "Boston", "MA", "02109", "", "Active"],
+            ["No Reviewable Site", "site-no-reviewable", "6 Account Way", "Dover", "NH", "03820", "", "Active"],
+            ["Duplicate Site A", "site-dup", "7 Dup Way", "Dover", "NH", "03821", "", "Active"],
+            ["Duplicate Site B", "site-dup", "8 Dup Way", "Dover", "NH", "03822", "", "Active"],
+            ["Blank ID Site", "", "9 Blank Way", "Dover", "NH", "03823", "", "Active"],
+        ],
+    )
+    _write_monday_csv(
+        orders,
+        "Order",
+        ["Job Site", "SERVICE", "Scheduled date", "Job ID", "Site ID", "Client ID"],
+        [["Good Site", "Inspection", "2026-01-01", "job-001", "site-good", "client-good"]],
     )
     return {"contacts": contacts, "leads": leads, "orders": orders, "sites": sites}
 
@@ -154,3 +219,87 @@ def test_prepare_tiny_sample_excludes_unreviewable_clients(tmp_path: Path) -> No
     assert summary.site_rejections["linked_client_unmapped_client_status"] == 1
     assert summary.clients_written == 3
     assert summary.sites_written == 6
+
+
+def test_generate_review_pack_writes_private_review_files_and_bucket_counts(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    output_dir = tmp_path / "import_validation_reports" / "monday_review_pack"
+
+    summary = generate_monday_review_pack(
+        contacts_path=exports["contacts"],
+        leads_path=exports["leads"],
+        orders_path=exports["orders"],
+        sites_path=exports["sites"],
+        output_dir=output_dir,
+        max_clients=1,
+        max_sites=1,
+    )
+
+    expected_files = {
+        "unresolved_sites_review.csv",
+        "client_status_review.csv",
+        "duplicate_sites_review.csv",
+        "status_defaults_review.csv",
+        "README.md",
+    }
+    assert {path.name for path in summary.files.values()} == expected_files
+    assert all(path.exists() for path in summary.files.values())
+
+    unresolved = _read_csv(output_dir / "unresolved_sites_review.csv")
+    buckets = Counter(row["diagnostic_bucket"] for row in unresolved)
+    assert buckets == {
+        "Site IDs not found in Leads": 1,
+        "sites with no Client ID": 1,
+        "linked to clients with unmapped client status": 1,
+        "Client IDs not found in Contacts": 1,
+        "no reviewable client candidate": 1,
+        "duplicate Site ID rows": 2,
+        "blank Site ID rows": 1,
+    }
+    assert all("manual_client_external_id" in row for row in unresolved)
+    assert all("review_status" in row for row in unresolved)
+
+    client_status_rows = _read_csv(output_dir / "client_status_review.csv")
+    assert [(row["client_id"], row["raw_client_status"], row["current_mapping"]) for row in client_status_rows] == [
+        ("client-unmapped", "Needs Review", ""),
+    ]
+
+    duplicate_rows = _read_csv(output_dir / "duplicate_sites_review.csv")
+    assert len(duplicate_rows) == 2
+    assert {row["duplicate_group"] for row in duplicate_rows} == {"site_id:site-dup"}
+
+    status_default_rows = _read_csv(output_dir / "status_defaults_review.csv")
+    assert [(row["site_id"], row["raw_site_status"], row["defaulted_status"]) for row in status_default_rows] == [
+        ("site-good", "Needs Field Review", "active"),
+    ]
+
+    readme = (output_dir / "README.md").read_text(encoding="utf-8")
+    assert "Counts By Diagnostic Bucket" in readme
+    assert "| Site IDs not found in Leads | 1 |" in readme
+    assert "| duplicate Site ID rows | 2 |" in readme
+    assert "no database writes, no provider calls" in readme
+
+
+def test_generate_review_pack_does_not_open_db_or_network(tmp_path: Path, monkeypatch) -> None:
+    exports = _fake_review_exports(tmp_path)
+
+    def fail_sqlite_connect(*_args, **_kwargs):
+        raise AssertionError("review pack generation must not open a database")
+
+    def fail_socket_connect(*_args, **_kwargs):
+        raise AssertionError("review pack generation must not open a network connection")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_sqlite_connect)
+    monkeypatch.setattr(socket, "create_connection", fail_socket_connect)
+
+    generate_monday_review_pack(
+        contacts_path=exports["contacts"],
+        leads_path=exports["leads"],
+        orders_path=exports["orders"],
+        sites_path=exports["sites"],
+        output_dir=tmp_path / "reports" / "review_pack",
+        max_clients=1,
+        max_sites=1,
+    )
+
+    assert list(tmp_path.rglob("*.db")) == []

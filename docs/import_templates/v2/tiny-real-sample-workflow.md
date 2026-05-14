@@ -156,7 +156,59 @@ Review the ignored mapping report for:
 
 Do not commit the generated CSVs or reports.
 
-## 10. How to read validator results
+## 10. Medium Sample Mapping Review
+
+The medium sample can pass template validation for the clear Clients/Sites rows while unresolved Monday rows still need manual mapping review. A clean validator result only means the selected clear rows are internally consistent. It does not approve the excluded rows, weak client links, unmapped statuses, duplicates, or defaulted statuses for import.
+
+Generate the private mapping review pack from the same Monday exports:
+
+```powershell
+cd C:\Users\brolf\Desktop\Stormwater_APP_Clean\stormwater-v2\apps\api
+python scripts\prepare_monday_tiny_sample.py `
+  --client-limit 25 `
+  --site-limit 75 `
+  --clients-output ..\..\docs\import_templates\v2\private\clients_medium_sample.csv `
+  --sites-output ..\..\docs\import_templates\v2\private\sites_medium_sample.csv `
+  --report-output ..\..\import_validation_reports\monday-medium-mapping-review.md `
+  --write-review-pack `
+  --review-output-dir ..\..\import_validation_reports\monday_review_pack
+```
+
+The review pack is written under:
+
+```text
+import_validation_reports/monday_review_pack/
+```
+
+Generated files:
+
+- `unresolved_sites_review.csv`
+- `client_status_review.csv`
+- `duplicate_sites_review.csv`
+- `status_defaults_review.csv`
+- `README.md`
+
+These files are private and ignored. They may contain real client names, site names, source row numbers, and source IDs. Do not commit them or paste their row contents into issue trackers, commits, or public docs.
+
+Bryce should fill:
+
+- `manual_client_external_id` when a site has a reviewed client mapping that the exports could not prove.
+- `manual_status` when a defaulted or unmapped site status needs a reviewed V2 status.
+- `suggested_status` when a client has an unmapped Monday status.
+- `review_status` with a clear decision such as `approved`, `skip`, `needs_source_fix`, or `needs_followup`.
+- `notes` for context that should survive into the next private validation pass.
+
+Do not proceed to import until:
+
+- unresolved site buckets have been reviewed,
+- unmapped client statuses have reviewed V2 statuses,
+- duplicate Site ID rows have keep/skip/merge decisions,
+- status defaults have been accepted or manually corrected,
+- generated private review files remain untracked in git.
+
+After Bryce completes the review, generate a larger private validation sample using only reviewed mappings. Do not import yet.
+
+## 11. How to read validator results
 
 Start with the console summary:
 
@@ -170,7 +222,7 @@ Start with the console summary:
 
 Open the Markdown report for exact row numbers and field-level messages.
 
-## 11. Stop conditions
+## 12. Stop conditions
 
 Stop and fix the private CSVs when any of these appear:
 
@@ -187,7 +239,7 @@ Stop and fix the private CSVs when any of these appear:
 
 No orphan Sites. No weak Client mapping. No blind import.
 
-## 12. What files must never be committed
+## 13. What files must never be committed
 
 Never commit:
 
@@ -206,7 +258,7 @@ Never commit:
 
 The committed templates are safe. Private copies and reports are not.
 
-## 13. Next step after clean validation
+## 14. Next step after clean validation
 
 After a clean tiny validation:
 
