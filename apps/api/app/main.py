@@ -20,6 +20,7 @@ from app.routers import (
     product,
     reminders,
     search,
+    site_intelligence,
     sites,
     timeline,
 )
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(ai_drafts.router)
     app.include_router(timeline.router)
     app.include_router(search.router)
+    app.include_router(site_intelligence.router)
     return app
 
 

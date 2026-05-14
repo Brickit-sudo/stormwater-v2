@@ -7,6 +7,10 @@ from app.models import (
     Client,
     ClientAlias,
     Contact,
+    DocumentExtractedField,
+    DocumentLinkSuggestion,
+    DocumentRecord,
+    DocumentTextChunk,
     EmailImportBatch,
     EmailMessage,
     EmailRecordLink,
@@ -16,10 +20,13 @@ from app.models import (
     ImportBatch,
     ImportRow,
     Job,
+    KnowledgeItem,
     Observation,
     Organization,
     OrganizationMembership,
     OutlookConnection,
+    RecordLink,
+    RecordNote,
     Reminder,
     Report,
     ServiceCatalog,
@@ -36,6 +43,10 @@ EXPECTED_TABLES = {
     "client_aliases",
     "contacts",
     "ai_drafts",
+    "document_extracted_fields",
+    "document_link_suggestions",
+    "document_records",
+    "document_text_chunks",
     "email_import_batches",
     "email_messages",
     "email_record_links",
@@ -45,10 +56,13 @@ EXPECTED_TABLES = {
     "import_batches",
     "import_rows",
     "jobs",
+    "knowledge_items",
     "observations",
     "organization_memberships",
     "organizations",
     "outlook_connections",
+    "record_links",
+    "record_notes",
     "reminders",
     "reports",
     "service_catalog",
@@ -81,6 +95,27 @@ EXPECTED_INDEXES = {
     "ix_evidence_files_organization_id_job_id",
     "ix_evidence_files_organization_id_site_id",
     "ix_evidence_files_organization_id_drive_file_id",
+    "ix_record_links_organization_id_source",
+    "ix_record_links_organization_id_target",
+    "ix_record_links_organization_id_relationship_type",
+    "ix_record_notes_organization_id_parent",
+    "ix_record_notes_organization_id_note_type",
+    "ix_knowledge_items_organization_id_client_id",
+    "ix_knowledge_items_organization_id_site_id",
+    "ix_knowledge_items_organization_id_job_id",
+    "ix_knowledge_items_organization_id_knowledge_type",
+    "ix_document_records_organization_id_status",
+    "ix_document_records_organization_id_document_type",
+    "ix_document_records_organization_id_client_id",
+    "ix_document_records_organization_id_site_id",
+    "ix_document_records_organization_id_job_id",
+    "ix_document_records_organization_id_evidence_file_id",
+    "ix_document_text_chunks_organization_id_document_id",
+    "ix_document_extracted_fields_organization_id_document_id",
+    "ix_document_extracted_fields_organization_id_review_status",
+    "ix_document_link_suggestions_organization_id_document_id",
+    "ix_document_link_suggestions_organization_id_review_status",
+    "ix_document_link_suggestions_organization_id_target",
     "ix_reports_organization_id_job_id",
     "ix_reports_organization_id_site_id",
     "ix_reports_organization_id_status",
@@ -151,6 +186,13 @@ def test_core_model_classes_import_cleanly() -> None:
     assert BmpSystem.__tablename__ == "bmp_systems"
     assert Observation.__tablename__ == "observations"
     assert EvidenceFile.__tablename__ == "evidence_files"
+    assert RecordLink.__tablename__ == "record_links"
+    assert RecordNote.__tablename__ == "record_notes"
+    assert KnowledgeItem.__tablename__ == "knowledge_items"
+    assert DocumentRecord.__tablename__ == "document_records"
+    assert DocumentTextChunk.__tablename__ == "document_text_chunks"
+    assert DocumentExtractedField.__tablename__ == "document_extracted_fields"
+    assert DocumentLinkSuggestion.__tablename__ == "document_link_suggestions"
     assert Reminder.__tablename__ == "reminders"
     assert Report.__tablename__ == "reports"
     assert ActivityLog.__tablename__ == "activity_log"

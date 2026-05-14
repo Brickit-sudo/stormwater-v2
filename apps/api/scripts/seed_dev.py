@@ -21,16 +21,25 @@ from app.config import get_settings  # noqa: E402
 from app.db import get_session_factory  # noqa: E402
 from app.models import (  # noqa: E402
     AiDraft,
+    BmpSystem,
     Client,
+    DocumentExtractedField,
+    DocumentLinkSuggestion,
+    DocumentRecord,
+    DocumentTextChunk,
     EmailImportBatch,
     EmailMessage,
     EmailRecordLink,
     EvidenceFile,
     Job,
+    KnowledgeItem,
+    Observation,
     Organization,
     OrganizationMembership,
     ProductDecision,
     ProductIdea,
+    RecordLink,
+    RecordNote,
     Reminder,
     Site,
     User,
@@ -321,6 +330,102 @@ SEED_JOBS: list[dict[str, Any]] = [
 ]
 
 
+SEED_BMP_SYSTEMS: list[dict[str, Any]] = [
+    {
+        "legacy_id": "bmp:bayside-cb-4",
+        "id": _seed_uuid("bmp:bayside-cb-4"),
+        "site_legacy_id": "site:bayside-retail-plaza",
+        "system_code": "CB-4",
+        "system_type": "catch_basin",
+        "name": "North Parking Catch Basin CB-4",
+        "location_description": "North parking row near tenant loading spaces.",
+        "notes": "Frequently blocked by vehicles during daytime service windows.",
+    },
+    {
+        "legacy_id": "bmp:bayside-hds-1",
+        "id": _seed_uuid("bmp:bayside-hds-1"),
+        "site_legacy_id": "site:bayside-retail-plaza",
+        "system_code": "HDS-1",
+        "system_type": "hydrodynamic_separator",
+        "name": "Hydrodynamic Separator HDS-1",
+        "location_description": "Rear drive aisle before outlet control structure.",
+        "notes": "Annual inspection should verify sediment sump depth and floatables.",
+    },
+    {
+        "legacy_id": "bmp:augusta-inlet-row-a",
+        "id": _seed_uuid("bmp:augusta-inlet-row-a"),
+        "site_legacy_id": "site:augusta-logistics-yard",
+        "system_code": "IN-A",
+        "system_type": "catch_basin",
+        "name": "Truck Yard Inlet Row A",
+        "location_description": "Low point along the central truck circulation lane.",
+        "notes": "Winter sanding creates a predictable spring sediment load.",
+    },
+    {
+        "legacy_id": "bmp:bangor-forebay",
+        "id": _seed_uuid("bmp:bangor-forebay"),
+        "site_legacy_id": "site:bangor-cold-storage",
+        "system_code": "FBY-1",
+        "system_type": "pond_forebay",
+        "name": "Stormwater Pond Forebay",
+        "location_description": "Forebay upstream of the main wet pond cell.",
+        "notes": "Access is easiest from the east maintenance gate.",
+    },
+]
+
+
+SEED_OBSERVATIONS: list[dict[str, Any]] = [
+    {
+        "legacy_id": "observation:bayside-cb-4-blocked",
+        "id": _seed_uuid("observation:bayside-cb-4-blocked"),
+        "job_legacy_id": "job:bayside-catch-basin-cleaning",
+        "system_legacy_id": "bmp:bayside-cb-4",
+        "observation_type": "maintenance_finding",
+        "finding": "CB-4 could not be cleaned because vehicles blocked the structure during the first service window.",
+        "recommendation": "Coordinate a tenant notice and return visit before the final maintenance closeout.",
+        "severity": "high",
+        "maintenance_needed": True,
+        "notes": "Good example of an observation that should become a corrective action later.",
+    },
+    {
+        "legacy_id": "observation:bayside-hds-floatables",
+        "id": _seed_uuid("observation:bayside-hds-floatables"),
+        "job_legacy_id": "job:bayside-post-storm-outfall-review",
+        "system_legacy_id": "bmp:bayside-hds-1",
+        "observation_type": "inspection_finding",
+        "finding": "Floatable debris was visible near the HDS access frame after the storm event.",
+        "recommendation": "Remove debris during the spring BMP inspection and verify outlet control condition.",
+        "severity": "medium",
+        "maintenance_needed": True,
+        "notes": "Seeded to show observation-to-BMP context in Site Intelligence.",
+    },
+    {
+        "legacy_id": "observation:augusta-inlet-sediment",
+        "id": _seed_uuid("observation:augusta-inlet-sediment"),
+        "job_legacy_id": "job:augusta-winter-sediment-cleanout",
+        "system_legacy_id": "bmp:augusta-inlet-row-a",
+        "observation_type": "maintenance_result",
+        "finding": "Winter sand accumulation was removed from the inlet row and flow paths were restored.",
+        "recommendation": "Keep the inlet row on the annual spring cleanout schedule.",
+        "severity": "low",
+        "maintenance_needed": False,
+        "notes": "Completed maintenance example for reviewed history.",
+    },
+    {
+        "legacy_id": "observation:bangor-forebay-sediment",
+        "id": _seed_uuid("observation:bangor-forebay-sediment"),
+        "job_legacy_id": "job:bangor-forebay-dredge-scoping",
+        "system_legacy_id": "bmp:bangor-forebay",
+        "observation_type": "inspection_finding",
+        "finding": "Forebay sediment is approaching the maintenance trigger at the inlet end.",
+        "recommendation": "Prepare a quote for forebay sediment removal before the next annual inspection cycle.",
+        "severity": "medium",
+        "maintenance_needed": True,
+        "notes": "Quote readiness candidate for the next billing/pricing phase.",
+    },
+]
+
+
 SEED_REMINDERS: list[dict[str, Any]] = [
     {
         "id": _seed_uuid("reminder:bayside-catch-basin-revisit"),
@@ -445,6 +550,8 @@ SEED_EVIDENCE_FILES: list[dict[str, Any]] = [
         "client_legacy_id": None,
         "site_legacy_id": None,
         "job_legacy_id": "job:bayside-2026-spring-inspection",
+        "system_legacy_id": None,
+        "observation_legacy_id": None,
         "source": "drive_link",
         "file_name": "Inspection Photo Set Placeholder",
         "mime_type": None,
@@ -459,6 +566,8 @@ SEED_EVIDENCE_FILES: list[dict[str, Any]] = [
         "client_legacy_id": None,
         "site_legacy_id": None,
         "job_legacy_id": "job:augusta-winter-sediment-cleanout",
+        "system_legacy_id": None,
+        "observation_legacy_id": None,
         "source": "drive_link",
         "file_name": "Maintenance Verification Notes.pdf",
         "mime_type": "application/pdf",
@@ -473,12 +582,267 @@ SEED_EVIDENCE_FILES: list[dict[str, Any]] = [
         "client_legacy_id": None,
         "site_legacy_id": None,
         "job_legacy_id": "job:augusta-yard-swppp-review",
+        "system_legacy_id": None,
+        "observation_legacy_id": None,
         "source": "other",
         "file_name": "Pending Field Notes",
         "mime_type": None,
         "public_url": None,
         "caption": "Draft placeholder; no URL yet - exercises the missing-URL render path.",
         "sort_order": 0,
+    },
+    {
+        "legacy_id": "evidence_file:bayside-cb4-blocked-photo",
+        "id": _seed_uuid("evidence_file:bayside-cb4-blocked-photo"),
+        "scope": "job",
+        "client_legacy_id": None,
+        "site_legacy_id": None,
+        "job_legacy_id": "job:bayside-catch-basin-cleaning",
+        "system_legacy_id": "bmp:bayside-cb-4",
+        "observation_legacy_id": "observation:bayside-cb-4-blocked",
+        "source": "photo",
+        "file_name": "CB-4 blocked by parked vehicles.jpg",
+        "mime_type": "image/jpeg",
+        "public_url": "https://drive.google.com/file/d/seed-bayside-cb4-photo/view",
+        "caption": "CB-4 blocked by vehicles during the first cleanout window.",
+        "sort_order": 1,
+    },
+    {
+        "legacy_id": "evidence_file:bangor-forebay-sediment-photo",
+        "id": _seed_uuid("evidence_file:bangor-forebay-sediment-photo"),
+        "scope": "job",
+        "client_legacy_id": None,
+        "site_legacy_id": None,
+        "job_legacy_id": "job:bangor-forebay-dredge-scoping",
+        "system_legacy_id": "bmp:bangor-forebay",
+        "observation_legacy_id": "observation:bangor-forebay-sediment",
+        "source": "photo",
+        "file_name": "Forebay sediment at inlet end.jpg",
+        "mime_type": "image/jpeg",
+        "public_url": "https://drive.google.com/file/d/seed-bangor-forebay-photo/view",
+        "caption": "Sediment accumulation at the forebay inlet end.",
+        "sort_order": 1,
+    },
+]
+
+
+SEED_RECORD_NOTES: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("record_note:bayside-site-access"),
+        "parent_type": "site",
+        "parent_legacy_id": "site:bayside-retail-plaza",
+        "title": "Early access window",
+        "body": "Property manager can unlock the rear gate at 6:30 AM for inspection or vac truck work.",
+        "note_type": "site_access",
+        "visibility": "internal",
+    },
+    {
+        "id": _seed_uuid("record_note:bayside-cb-cleaning-review"),
+        "parent_type": "job",
+        "parent_legacy_id": "job:bayside-catch-basin-cleaning",
+        "title": "Closeout dependency",
+        "body": "Do not close the job until CB-4 and CB-7 have a return-visit photo or PM waiver.",
+        "note_type": "operations",
+        "visibility": "internal",
+    },
+    {
+        "id": _seed_uuid("record_note:bangor-forebay-quote"),
+        "parent_type": "observation",
+        "parent_legacy_id": "observation:bangor-forebay-sediment",
+        "title": "Quote candidate",
+        "body": "Use this observation as a candidate for the future corrective-action and quote workflow.",
+        "note_type": "review",
+        "visibility": "internal",
+    },
+]
+
+
+SEED_KNOWLEDGE_ITEMS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("knowledge:bayside-site-access"),
+        "client_legacy_id": None,
+        "site_legacy_id": "site:bayside-retail-plaza",
+        "job_legacy_id": None,
+        "title": "Rear gate access",
+        "content": "Rear gate access should be scheduled before retail traffic. Avoid the loading lane after 8 AM.",
+        "knowledge_type": "site_access",
+        "tags_json": ["access", "field"],
+        "source_type": "site",
+        "source_legacy_id": "site:bayside-retail-plaza",
+    },
+    {
+        "id": _seed_uuid("knowledge:ptpm-report-preference"),
+        "client_legacy_id": "client:pine-tree-property-management",
+        "site_legacy_id": None,
+        "job_legacy_id": None,
+        "title": "Report delivery preference",
+        "content": "Client prefers concise executive summaries with photo-backed maintenance recommendations.",
+        "knowledge_type": "client_preference",
+        "tags_json": ["reports", "client"],
+        "source_type": "client",
+        "source_legacy_id": "client:pine-tree-property-management",
+    },
+    {
+        "id": _seed_uuid("knowledge:augusta-ms4-permit-note"),
+        "client_legacy_id": None,
+        "site_legacy_id": "site:augusta-logistics-yard",
+        "job_legacy_id": None,
+        "title": "MS4 permit notice",
+        "content": "Keep the permit notice with site records and review it before annual compliance work.",
+        "knowledge_type": "permit_note",
+        "tags_json": ["permit", "MS4"],
+        "source_type": "evidence_file",
+        "source_legacy_id": "evidence_file:augusta-ms4-permit-notice",
+    },
+    {
+        "id": _seed_uuid("knowledge:bayside-report-language"),
+        "client_legacy_id": None,
+        "site_legacy_id": "site:bayside-retail-plaza",
+        "job_legacy_id": None,
+        "title": "Blocked structure language",
+        "content": "Access-limited structures should be documented as requiring a coordinated return visit before closeout.",
+        "knowledge_type": "report_language",
+        "tags_json": ["report", "maintenance"],
+        "source_type": "observation",
+        "source_legacy_id": "observation:bayside-cb-4-blocked",
+    },
+]
+
+
+SEED_DOCUMENT_RECORDS: list[dict[str, Any]] = [
+    {
+        "legacy_id": "document:bayside-annual-inspection-report",
+        "id": _seed_uuid("document:bayside-annual-inspection-report"),
+        "evidence_file_legacy_id": None,
+        "source": "demo_seed",
+        "file_name": "Bayside Annual BMP Inspection Report.pdf",
+        "file_url": "https://drive.google.com/file/d/seed-bayside-annual-report/view",
+        "storage_path": None,
+        "mime_type": "application/pdf",
+        "document_type": "report",
+        "client_legacy_id": None,
+        "site_legacy_id": "site:bayside-retail-plaza",
+        "job_legacy_id": None,
+        "status": "reviewing",
+        "extraction_status": "complete",
+    },
+    {
+        "legacy_id": "document:bangor-forebay-proposal",
+        "id": _seed_uuid("document:bangor-forebay-proposal"),
+        "evidence_file_legacy_id": None,
+        "source": "demo_seed",
+        "file_name": "Bangor Forebay Maintenance Proposal.pdf",
+        "file_url": "https://drive.google.com/file/d/seed-bangor-forebay-proposal/view",
+        "storage_path": None,
+        "mime_type": "application/pdf",
+        "document_type": "proposal",
+        "client_legacy_id": None,
+        "site_legacy_id": None,
+        "job_legacy_id": "job:bangor-forebay-dredge-scoping",
+        "status": "queued",
+        "extraction_status": "complete",
+    },
+    {
+        "legacy_id": "document:augusta-disposal-ticket",
+        "id": _seed_uuid("document:augusta-disposal-ticket"),
+        "evidence_file_legacy_id": "evidence_file:augusta-winter-sediment-cleanout-verification",
+        "source": "demo_seed",
+        "file_name": "Augusta Cleanout Disposal Ticket.pdf",
+        "file_url": "https://drive.google.com/file/d/seed-augusta-maintenance-verification/view",
+        "storage_path": None,
+        "mime_type": "application/pdf",
+        "document_type": "invoice",
+        "client_legacy_id": None,
+        "site_legacy_id": None,
+        "job_legacy_id": "job:augusta-winter-sediment-cleanout",
+        "status": "reviewed",
+        "extraction_status": "complete",
+    },
+]
+
+
+SEED_DOCUMENT_TEXT_CHUNKS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("document_chunk:bayside-report-summary"),
+        "document_legacy_id": "document:bayside-annual-inspection-report",
+        "chunk_index": 0,
+        "page_number": 1,
+        "heading": "Inspection Summary",
+        "text": "Bayside Retail Plaza was inspected for catch basin access, HDS floatables, and outlet condition.",
+        "token_count": 18,
+    },
+    {
+        "id": _seed_uuid("document_chunk:bayside-report-recommendation"),
+        "document_legacy_id": "document:bayside-annual-inspection-report",
+        "chunk_index": 1,
+        "page_number": 2,
+        "heading": "Maintenance Recommendations",
+        "text": "Coordinate a return visit for blocked structures and remove floatable debris at HDS-1.",
+        "token_count": 15,
+    },
+    {
+        "id": _seed_uuid("document_chunk:bangor-proposal-value"),
+        "document_legacy_id": "document:bangor-forebay-proposal",
+        "chunk_index": 0,
+        "page_number": 1,
+        "heading": "Proposal Scope",
+        "text": "Proposal includes forebay sediment removal, access protection, and disposal documentation.",
+        "token_count": 12,
+    },
+]
+
+
+SEED_DOCUMENT_EXTRACTED_FIELDS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("document_field:bayside-inspection-date"),
+        "document_legacy_id": "document:bayside-annual-inspection-report",
+        "field_name": "inspection_date",
+        "field_value": "2026-04-29",
+        "confidence": 0.94,
+        "source_page": 1,
+        "review_status": "pending",
+    },
+    {
+        "id": _seed_uuid("document_field:bayside-bmp-type"),
+        "document_legacy_id": "document:bayside-annual-inspection-report",
+        "field_name": "bmp_type",
+        "field_value": "Hydrodynamic separator",
+        "confidence": 0.88,
+        "source_page": 2,
+        "review_status": "pending",
+    },
+    {
+        "id": _seed_uuid("document_field:bangor-proposal-value"),
+        "document_legacy_id": "document:bangor-forebay-proposal",
+        "field_name": "quote_value",
+        "field_value": "$8,750",
+        "confidence": 0.81,
+        "source_page": 1,
+        "review_status": "needs_review",
+    },
+]
+
+
+SEED_DOCUMENT_LINK_SUGGESTIONS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("document_link_suggestion:bayside-report-site"),
+        "document_legacy_id": "document:bayside-annual-inspection-report",
+        "target_type": "site",
+        "target_legacy_id": "site:bayside-retail-plaza",
+        "target_label": "Bayside Retail Plaza",
+        "confidence": 0.96,
+        "reason": "Report header and file name both match the seeded Bayside site.",
+        "review_status": "pending",
+    },
+    {
+        "id": _seed_uuid("document_link_suggestion:bangor-proposal-job"),
+        "document_legacy_id": "document:bangor-forebay-proposal",
+        "target_type": "job",
+        "target_legacy_id": "job:bangor-forebay-dredge-scoping",
+        "target_label": "Stormwater Pond Forebay Dredge Scoping",
+        "confidence": 0.9,
+        "reason": "Proposal scope references forebay sediment removal for the active scoping job.",
+        "review_status": "pending",
     },
 ]
 
@@ -695,6 +1059,7 @@ SEED_EMAIL_RECORD_LINKS: list[dict[str, Any]] = [
 
 SEED_AI_DRAFTS: list[dict[str, Any]] = [
     {
+        "legacy_id": "ai_draft:bayside-access-reply",
         "id": _seed_uuid("ai_draft:bayside-access-reply"),
         "target_type": "job",
         "target_legacy_id": "job:bayside-2026-spring-inspection",
@@ -709,6 +1074,7 @@ SEED_AI_DRAFTS: list[dict[str, Any]] = [
         "status": "draft",
     },
     {
+        "legacy_id": "ai_draft:blocked-catch-basin-revisit",
         "id": _seed_uuid("ai_draft:blocked-catch-basin-revisit"),
         "target_type": "job",
         "target_legacy_id": "job:bayside-catch-basin-cleaning",
@@ -723,6 +1089,7 @@ SEED_AI_DRAFTS: list[dict[str, Any]] = [
         "status": "reviewed",
     },
     {
+        "legacy_id": "ai_draft:portfolio-onboarding-summary",
         "id": _seed_uuid("ai_draft:portfolio-onboarding-summary"),
         "target_type": "client",
         "target_legacy_id": "client:northeast-retail-portfolio",
@@ -735,6 +1102,60 @@ SEED_AI_DRAFTS: list[dict[str, Any]] = [
             "and report-readiness gaps for each site before recurring work is scheduled."
         ),
         "status": "draft",
+    },
+]
+
+
+SEED_RECORD_LINKS: list[dict[str, Any]] = [
+    {
+        "id": _seed_uuid("record_link:email-bayside-access-to-site"),
+        "source_type": "email_message",
+        "source_legacy_id": "email:bayside-access-window",
+        "target_type": "site",
+        "target_legacy_id": "site:bayside-retail-plaza",
+        "relationship_type": "mentions",
+        "confidence": 0.92,
+        "link_reason": "Email body references the Bayside site folder and inspection access window.",
+    },
+    {
+        "id": _seed_uuid("record_link:evidence-cb4-photo-to-job"),
+        "source_type": "evidence_file",
+        "source_legacy_id": "evidence_file:bayside-cb4-blocked-photo",
+        "target_type": "job",
+        "target_legacy_id": "job:bayside-catch-basin-cleaning",
+        "relationship_type": "supports",
+        "confidence": 1.0,
+        "link_reason": "Photo supports the catch basin cleanout closeout dependency.",
+    },
+    {
+        "id": _seed_uuid("record_link:ai-draft-to-email"),
+        "source_type": "ai_draft",
+        "source_legacy_id": "ai_draft:bayside-access-reply",
+        "target_type": "email_message",
+        "target_legacy_id": "email:bayside-access-window",
+        "relationship_type": "drafted_from",
+        "confidence": 1.0,
+        "link_reason": "Manual draft was prepared from the access-window email.",
+    },
+    {
+        "id": _seed_uuid("record_link:document-bayside-report-to-site"),
+        "source_type": "document",
+        "source_legacy_id": "document:bayside-annual-inspection-report",
+        "target_type": "site",
+        "target_legacy_id": "site:bayside-retail-plaza",
+        "relationship_type": "describes",
+        "confidence": 0.96,
+        "link_reason": "Seeded document record belongs to the Bayside site intelligence queue.",
+    },
+    {
+        "id": _seed_uuid("record_link:observation-cb4-to-bmp"),
+        "source_type": "observation",
+        "source_legacy_id": "observation:bayside-cb-4-blocked",
+        "target_type": "bmp_system",
+        "target_legacy_id": "bmp:bayside-cb-4",
+        "relationship_type": "finding_on",
+        "confidence": 1.0,
+        "link_reason": "Observation is directly tied to the CB-4 stormwater asset.",
     },
 ]
 
@@ -1177,12 +1598,21 @@ def seed_counts() -> dict[str, int]:
         "clients": len(SEED_CLIENTS),
         "sites": len(SEED_SITES),
         "jobs": len(SEED_JOBS),
+        "bmp_systems": len(SEED_BMP_SYSTEMS),
+        "observations": len(SEED_OBSERVATIONS),
         "reminders": len(SEED_REMINDERS),
         "evidence_files": len(SEED_EVIDENCE_FILES),
+        "record_notes": len(SEED_RECORD_NOTES),
+        "knowledge_items": len(SEED_KNOWLEDGE_ITEMS),
+        "document_records": len(SEED_DOCUMENT_RECORDS),
+        "document_text_chunks": len(SEED_DOCUMENT_TEXT_CHUNKS),
+        "document_extracted_fields": len(SEED_DOCUMENT_EXTRACTED_FIELDS),
+        "document_link_suggestions": len(SEED_DOCUMENT_LINK_SUGGESTIONS),
         "email_import_batches": len(SEED_EMAIL_IMPORT_BATCHES),
         "email_messages": len(SEED_EMAIL_MESSAGES),
         "email_record_links": len(SEED_EMAIL_RECORD_LINKS),
         "ai_drafts": len(SEED_AI_DRAFTS),
+        "record_links": len(SEED_RECORD_LINKS),
         "product_ideas": len(SEED_PRODUCT_IDEAS),
         "product_decisions": len(SEED_PRODUCT_DECISIONS),
     }
@@ -1265,9 +1695,9 @@ def _ensure_demo_admin_user(session: Session) -> User:
 
 def _find_seed_row(
     session: Session,
-    model: type[Client] | type[Site] | type[Job] | type[EvidenceFile],
+    model: Any,
     legacy_id: str,
-) -> Client | Site | Job | EvidenceFile | None:
+) -> Any:
     return session.scalar(
         select(model).where(
             model.organization_id == DEMO_ORGANIZATION_ID,
@@ -1279,10 +1709,10 @@ def _find_seed_row(
 
 def _upsert_seed_row(
     session: Session,
-    model: type[Client] | type[Site] | type[Job] | type[EvidenceFile],
+    model: Any,
     record: dict[str, Any],
     values: dict[str, Any],
-) -> Client | Site | Job | EvidenceFile:
+) -> Any:
     legacy_id = record["legacy_id"]
     instance = _find_seed_row(session, model, legacy_id)
     if instance is None:
@@ -1342,15 +1772,76 @@ def _job_values(
     return values
 
 
+def _bmp_system_values(record: dict[str, Any], site_by_legacy_id: dict[str, Site]) -> dict[str, Any]:
+    values = {
+        key: value
+        for key, value in record.items()
+        if key not in {"id", "legacy_id", "site_legacy_id"}
+    }
+    values["site_id"] = site_by_legacy_id[record["site_legacy_id"]].id
+    return values
+
+
+def _observation_values(
+    record: dict[str, Any],
+    job_by_legacy_id: dict[str, Job],
+    bmp_by_legacy_id: dict[str, BmpSystem],
+) -> dict[str, Any]:
+    values = {
+        key: value
+        for key, value in record.items()
+        if key not in {"id", "legacy_id", "job_legacy_id", "system_legacy_id"}
+    }
+    values["job_id"] = job_by_legacy_id[record["job_legacy_id"]].id
+    system_legacy_id = record.get("system_legacy_id")
+    values["system_id"] = bmp_by_legacy_id[system_legacy_id].id if system_legacy_id else None
+    return values
+
+
+def _upsert_seed_by_id(
+    session: Session,
+    model: Any,
+    record: dict[str, Any],
+    values: dict[str, Any],
+) -> Any:
+    instance = session.get(model, record["id"])
+    if instance is None:
+        instance = model(
+            id=record["id"],
+            organization_id=DEMO_ORGANIZATION_ID,
+            **values,
+        )
+        session.add(instance)
+    else:
+        if instance.organization_id != DEMO_ORGANIZATION_ID:
+            raise RuntimeError(f"Refusing to overwrite {model.__tablename__} row with id {record['id']}.")
+        for field, value in values.items():
+            setattr(instance, field, value)
+        if hasattr(instance, "archived_at"):
+            instance.archived_at = None
+        session.add(instance)
+
+    session.flush()
+    return instance
+
+
 def reset_seed(session: Session) -> dict[str, int]:
     deleted: dict[str, int] = {}
     for model, records in (
         (ProductDecision, SEED_PRODUCT_DECISIONS),
         (ProductIdea, SEED_PRODUCT_IDEAS),
+        (RecordLink, SEED_RECORD_LINKS),
         (AiDraft, SEED_AI_DRAFTS),
         (EmailRecordLink, SEED_EMAIL_RECORD_LINKS),
         (EmailMessage, SEED_EMAIL_MESSAGES),
         (EmailImportBatch, SEED_EMAIL_IMPORT_BATCHES),
+        (DocumentLinkSuggestion, SEED_DOCUMENT_LINK_SUGGESTIONS),
+        (DocumentExtractedField, SEED_DOCUMENT_EXTRACTED_FIELDS),
+        (DocumentTextChunk, SEED_DOCUMENT_TEXT_CHUNKS),
+        (DocumentRecord, SEED_DOCUMENT_RECORDS),
+        (KnowledgeItem, SEED_KNOWLEDGE_ITEMS),
+        (RecordNote, SEED_RECORD_NOTES),
+        (EvidenceFile, SEED_EVIDENCE_FILES),
     ):
         result = session.execute(
             delete(model).where(
@@ -1368,7 +1859,15 @@ def reset_seed(session: Session) -> dict[str, int]:
     )
     deleted[Reminder.__tablename__] = reminder_result.rowcount or 0
 
-    for model in (EvidenceFile, Job, Site, Client):
+    observation_result = session.execute(
+        delete(Observation).where(
+            Observation.organization_id == DEMO_ORGANIZATION_ID,
+            Observation.id.in_([record["id"] for record in SEED_OBSERVATIONS]),
+        ),
+    )
+    deleted[Observation.__tablename__] = observation_result.rowcount or 0
+
+    for model in (BmpSystem, Job, Site, Client):
         result = session.execute(
             delete(model).where(
                 model.organization_id == DEMO_ORGANIZATION_ID,
@@ -1437,6 +1936,8 @@ def _evidence_file_values(
     client_by_legacy_id: dict[str, Client],
     site_by_legacy_id: dict[str, Site],
     job_by_legacy_id: dict[str, Job],
+    bmp_by_legacy_id: dict[str, BmpSystem],
+    observation_by_legacy_id: dict[str, Observation],
 ) -> dict[str, Any]:
     values = {
         key: value
@@ -1449,6 +1950,8 @@ def _evidence_file_values(
             "client_legacy_id",
             "site_legacy_id",
             "job_legacy_id",
+            "system_legacy_id",
+            "observation_legacy_id",
         }
     }
     client_legacy_id = record.get("client_legacy_id")
@@ -1459,6 +1962,12 @@ def _evidence_file_values(
     )
     values["site_id"] = site_by_legacy_id[site_legacy_id].id if site_legacy_id else None
     values["job_id"] = job_by_legacy_id[job_legacy_id].id if job_legacy_id else None
+    system_legacy_id = record.get("system_legacy_id")
+    observation_legacy_id = record.get("observation_legacy_id")
+    values["system_id"] = bmp_by_legacy_id[system_legacy_id].id if system_legacy_id else None
+    values["observation_id"] = (
+        observation_by_legacy_id[observation_legacy_id].id if observation_legacy_id else None
+    )
     return values
 
 
@@ -1491,6 +2000,213 @@ def _scope_ids_from_target(
     else:
         raise RuntimeError(f"Unsupported target_type: {target_type}")
     return scope
+
+
+def _record_id_from_seed_ref(
+    record_type: str,
+    legacy_id: str,
+    *,
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+    bmp_by_legacy_id: dict[str, BmpSystem],
+    observation_by_legacy_id: dict[str, Observation],
+    evidence_file_by_legacy_id: dict[str, EvidenceFile],
+    document_by_legacy_id: dict[str, DocumentRecord],
+    email_by_legacy_id: dict[str, EmailMessage],
+    ai_draft_by_legacy_id: dict[str, AiDraft],
+) -> uuid.UUID:
+    by_type: dict[str, dict[str, Any]] = {
+        "client": client_by_legacy_id,
+        "site": site_by_legacy_id,
+        "job": job_by_legacy_id,
+        "bmp_system": bmp_by_legacy_id,
+        "observation": observation_by_legacy_id,
+        "evidence_file": evidence_file_by_legacy_id,
+        "document": document_by_legacy_id,
+        "email_message": email_by_legacy_id,
+        "ai_draft": ai_draft_by_legacy_id,
+    }
+    if record_type not in by_type:
+        raise RuntimeError(f"Unsupported seed record type: {record_type}")
+    return by_type[record_type][legacy_id].id
+
+
+def _record_note_values(
+    record: dict[str, Any],
+    *,
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+    bmp_by_legacy_id: dict[str, BmpSystem],
+    observation_by_legacy_id: dict[str, Observation],
+    evidence_file_by_legacy_id: dict[str, EvidenceFile],
+    document_by_legacy_id: dict[str, DocumentRecord],
+    email_by_legacy_id: dict[str, EmailMessage],
+    ai_draft_by_legacy_id: dict[str, AiDraft],
+) -> dict[str, Any]:
+    parent_type = record["parent_type"]
+    return {
+        "parent_type": parent_type,
+        "parent_id": _record_id_from_seed_ref(
+            parent_type,
+            record["parent_legacy_id"],
+            client_by_legacy_id=client_by_legacy_id,
+            site_by_legacy_id=site_by_legacy_id,
+            job_by_legacy_id=job_by_legacy_id,
+            bmp_by_legacy_id=bmp_by_legacy_id,
+            observation_by_legacy_id=observation_by_legacy_id,
+            evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+            document_by_legacy_id=document_by_legacy_id,
+            email_by_legacy_id=email_by_legacy_id,
+            ai_draft_by_legacy_id=ai_draft_by_legacy_id,
+        ),
+        "title": record["title"],
+        "body": record["body"],
+        "note_type": record["note_type"],
+        "visibility": record["visibility"],
+    }
+
+
+def _knowledge_item_values(
+    record: dict[str, Any],
+    *,
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+    bmp_by_legacy_id: dict[str, BmpSystem],
+    observation_by_legacy_id: dict[str, Observation],
+    evidence_file_by_legacy_id: dict[str, EvidenceFile],
+    document_by_legacy_id: dict[str, DocumentRecord],
+    email_by_legacy_id: dict[str, EmailMessage],
+    ai_draft_by_legacy_id: dict[str, AiDraft],
+) -> dict[str, Any]:
+    source_type = record.get("source_type")
+    source_legacy_id = record.get("source_legacy_id")
+    return {
+        "client_id": client_by_legacy_id[record["client_legacy_id"]].id if record.get("client_legacy_id") else None,
+        "site_id": site_by_legacy_id[record["site_legacy_id"]].id if record.get("site_legacy_id") else None,
+        "job_id": job_by_legacy_id[record["job_legacy_id"]].id if record.get("job_legacy_id") else None,
+        "title": record["title"],
+        "content": record["content"],
+        "knowledge_type": record["knowledge_type"],
+        "tags_json": record.get("tags_json"),
+        "source_type": source_type,
+        "source_id": (
+            _record_id_from_seed_ref(
+                source_type,
+                source_legacy_id,
+                client_by_legacy_id=client_by_legacy_id,
+                site_by_legacy_id=site_by_legacy_id,
+                job_by_legacy_id=job_by_legacy_id,
+                bmp_by_legacy_id=bmp_by_legacy_id,
+                observation_by_legacy_id=observation_by_legacy_id,
+                evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+                document_by_legacy_id=document_by_legacy_id,
+                email_by_legacy_id=email_by_legacy_id,
+                ai_draft_by_legacy_id=ai_draft_by_legacy_id,
+            )
+            if source_type and source_legacy_id
+            else None
+        ),
+    }
+
+
+def _document_record_values(
+    record: dict[str, Any],
+    evidence_file_by_legacy_id: dict[str, EvidenceFile],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+) -> dict[str, Any]:
+    return {
+        "evidence_file_id": (
+            evidence_file_by_legacy_id[record["evidence_file_legacy_id"]].id
+            if record.get("evidence_file_legacy_id")
+            else None
+        ),
+        "source": record["source"],
+        "file_name": record["file_name"],
+        "file_url": record.get("file_url"),
+        "storage_path": record.get("storage_path"),
+        "mime_type": record.get("mime_type"),
+        "document_type": record["document_type"],
+        "client_id": client_by_legacy_id[record["client_legacy_id"]].id if record.get("client_legacy_id") else None,
+        "site_id": site_by_legacy_id[record["site_legacy_id"]].id if record.get("site_legacy_id") else None,
+        "job_id": job_by_legacy_id[record["job_legacy_id"]].id if record.get("job_legacy_id") else None,
+        "status": record["status"],
+        "extraction_status": record["extraction_status"],
+    }
+
+
+def _document_text_chunk_values(
+    record: dict[str, Any],
+    document_by_legacy_id: dict[str, DocumentRecord],
+) -> dict[str, Any]:
+    return {
+        "document_id": document_by_legacy_id[record["document_legacy_id"]].id,
+        "chunk_index": record["chunk_index"],
+        "page_number": record.get("page_number"),
+        "heading": record.get("heading"),
+        "text": record["text"],
+        "token_count": record.get("token_count"),
+    }
+
+
+def _document_extracted_field_values(
+    record: dict[str, Any],
+    document_by_legacy_id: dict[str, DocumentRecord],
+) -> dict[str, Any]:
+    return {
+        "document_id": document_by_legacy_id[record["document_legacy_id"]].id,
+        "field_name": record["field_name"],
+        "field_value": record["field_value"],
+        "confidence": record.get("confidence"),
+        "source_page": record.get("source_page"),
+        "review_status": record["review_status"],
+    }
+
+
+def _document_link_suggestion_values(
+    record: dict[str, Any],
+    *,
+    document_by_legacy_id: dict[str, DocumentRecord],
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+    bmp_by_legacy_id: dict[str, BmpSystem],
+    observation_by_legacy_id: dict[str, Observation],
+    evidence_file_by_legacy_id: dict[str, EvidenceFile],
+    email_by_legacy_id: dict[str, EmailMessage],
+    ai_draft_by_legacy_id: dict[str, AiDraft],
+) -> dict[str, Any]:
+    target_type = record["target_type"]
+    target_legacy_id = record.get("target_legacy_id")
+    return {
+        "document_id": document_by_legacy_id[record["document_legacy_id"]].id,
+        "target_type": target_type,
+        "target_id": (
+            _record_id_from_seed_ref(
+                target_type,
+                target_legacy_id,
+                client_by_legacy_id=client_by_legacy_id,
+                site_by_legacy_id=site_by_legacy_id,
+                job_by_legacy_id=job_by_legacy_id,
+                bmp_by_legacy_id=bmp_by_legacy_id,
+                observation_by_legacy_id=observation_by_legacy_id,
+                evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+                document_by_legacy_id=document_by_legacy_id,
+                email_by_legacy_id=email_by_legacy_id,
+                ai_draft_by_legacy_id=ai_draft_by_legacy_id,
+            )
+            if target_legacy_id
+            else None
+        ),
+        "target_label": record.get("target_label"),
+        "confidence": record.get("confidence"),
+        "reason": record.get("reason"),
+        "review_status": record["review_status"],
+    }
 
 
 def _email_import_batch_values(record: dict[str, Any]) -> dict[str, Any]:
@@ -1630,7 +2346,7 @@ def _ai_draft_values(
     values = {
         key: value
         for key, value in record.items()
-        if key not in {"id", "target_type", "target_legacy_id", "email_legacy_id"}
+        if key not in {"id", "legacy_id", "target_type", "target_legacy_id", "email_legacy_id"}
     }
     values["email_message_id"] = email_by_legacy_id[record["email_legacy_id"]].id
     values.update(
@@ -1666,6 +2382,56 @@ def _upsert_seed_ai_draft(
         session.add(instance)
     session.flush()
     return instance
+
+
+def _record_link_values(
+    record: dict[str, Any],
+    *,
+    client_by_legacy_id: dict[str, Client],
+    site_by_legacy_id: dict[str, Site],
+    job_by_legacy_id: dict[str, Job],
+    bmp_by_legacy_id: dict[str, BmpSystem],
+    observation_by_legacy_id: dict[str, Observation],
+    evidence_file_by_legacy_id: dict[str, EvidenceFile],
+    document_by_legacy_id: dict[str, DocumentRecord],
+    email_by_legacy_id: dict[str, EmailMessage],
+    ai_draft_by_legacy_id: dict[str, AiDraft],
+) -> dict[str, Any]:
+    source_type = record["source_type"]
+    target_type = record["target_type"]
+    return {
+        "source_type": source_type,
+        "source_id": _record_id_from_seed_ref(
+            source_type,
+            record["source_legacy_id"],
+            client_by_legacy_id=client_by_legacy_id,
+            site_by_legacy_id=site_by_legacy_id,
+            job_by_legacy_id=job_by_legacy_id,
+            bmp_by_legacy_id=bmp_by_legacy_id,
+            observation_by_legacy_id=observation_by_legacy_id,
+            evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+            document_by_legacy_id=document_by_legacy_id,
+            email_by_legacy_id=email_by_legacy_id,
+            ai_draft_by_legacy_id=ai_draft_by_legacy_id,
+        ),
+        "target_type": target_type,
+        "target_id": _record_id_from_seed_ref(
+            target_type,
+            record["target_legacy_id"],
+            client_by_legacy_id=client_by_legacy_id,
+            site_by_legacy_id=site_by_legacy_id,
+            job_by_legacy_id=job_by_legacy_id,
+            bmp_by_legacy_id=bmp_by_legacy_id,
+            observation_by_legacy_id=observation_by_legacy_id,
+            evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+            document_by_legacy_id=document_by_legacy_id,
+            email_by_legacy_id=email_by_legacy_id,
+            ai_draft_by_legacy_id=ai_draft_by_legacy_id,
+        ),
+        "relationship_type": record["relationship_type"],
+        "confidence": record.get("confidence"),
+        "link_reason": record.get("link_reason"),
+    }
 
 
 def _product_idea_values(record: dict[str, Any]) -> dict[str, Any]:
@@ -1767,6 +2533,26 @@ def seed(session: Session) -> Organization:
         )
         job_by_legacy_id[record["legacy_id"]] = job
 
+    bmp_by_legacy_id: dict[str, BmpSystem] = {}
+    for record in SEED_BMP_SYSTEMS:
+        system = _upsert_seed_row(
+            session,
+            BmpSystem,
+            record,
+            _bmp_system_values(record, site_by_legacy_id),
+        )
+        bmp_by_legacy_id[record["legacy_id"]] = system
+
+    observation_by_legacy_id: dict[str, Observation] = {}
+    for record in SEED_OBSERVATIONS:
+        observation = _upsert_seed_by_id(
+            session,
+            Observation,
+            record,
+            _observation_values(record, job_by_legacy_id, bmp_by_legacy_id),
+        )
+        observation_by_legacy_id[record["legacy_id"]] = observation
+
     for record in SEED_REMINDERS:
         _upsert_seed_reminder(
             session,
@@ -1779,8 +2565,9 @@ def seed(session: Session) -> Organization:
             ),
         )
 
+    evidence_file_by_legacy_id: dict[str, EvidenceFile] = {}
     for record in SEED_EVIDENCE_FILES:
-        _upsert_seed_row(
+        file_record = _upsert_seed_row(
             session,
             EvidenceFile,
             record,
@@ -1789,6 +2576,101 @@ def seed(session: Session) -> Organization:
                 client_by_legacy_id,
                 site_by_legacy_id,
                 job_by_legacy_id,
+                bmp_by_legacy_id,
+                observation_by_legacy_id,
+            ),
+        )
+        evidence_file_by_legacy_id[record["legacy_id"]] = file_record
+
+    empty_email_by_legacy_id: dict[str, EmailMessage] = {}
+    empty_ai_draft_by_legacy_id: dict[str, AiDraft] = {}
+    empty_document_by_legacy_id: dict[str, DocumentRecord] = {}
+    for record in SEED_RECORD_NOTES:
+        _upsert_seed_by_id(
+            session,
+            RecordNote,
+            record,
+            _record_note_values(
+                record,
+                client_by_legacy_id=client_by_legacy_id,
+                site_by_legacy_id=site_by_legacy_id,
+                job_by_legacy_id=job_by_legacy_id,
+                bmp_by_legacy_id=bmp_by_legacy_id,
+                observation_by_legacy_id=observation_by_legacy_id,
+                evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+                document_by_legacy_id=empty_document_by_legacy_id,
+                email_by_legacy_id=empty_email_by_legacy_id,
+                ai_draft_by_legacy_id=empty_ai_draft_by_legacy_id,
+            ),
+        )
+
+    for record in SEED_KNOWLEDGE_ITEMS:
+        _upsert_seed_by_id(
+            session,
+            KnowledgeItem,
+            record,
+            _knowledge_item_values(
+                record,
+                client_by_legacy_id=client_by_legacy_id,
+                site_by_legacy_id=site_by_legacy_id,
+                job_by_legacy_id=job_by_legacy_id,
+                bmp_by_legacy_id=bmp_by_legacy_id,
+                observation_by_legacy_id=observation_by_legacy_id,
+                evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+                document_by_legacy_id=empty_document_by_legacy_id,
+                email_by_legacy_id=empty_email_by_legacy_id,
+                ai_draft_by_legacy_id=empty_ai_draft_by_legacy_id,
+            ),
+        )
+
+    document_by_legacy_id: dict[str, DocumentRecord] = {}
+    for record in SEED_DOCUMENT_RECORDS:
+        document = _upsert_seed_by_id(
+            session,
+            DocumentRecord,
+            record,
+            _document_record_values(
+                record,
+                evidence_file_by_legacy_id,
+                client_by_legacy_id,
+                site_by_legacy_id,
+                job_by_legacy_id,
+            ),
+        )
+        document_by_legacy_id[record["legacy_id"]] = document
+
+    for record in SEED_DOCUMENT_TEXT_CHUNKS:
+        _upsert_seed_by_id(
+            session,
+            DocumentTextChunk,
+            record,
+            _document_text_chunk_values(record, document_by_legacy_id),
+        )
+
+    for record in SEED_DOCUMENT_EXTRACTED_FIELDS:
+        _upsert_seed_by_id(
+            session,
+            DocumentExtractedField,
+            record,
+            _document_extracted_field_values(record, document_by_legacy_id),
+        )
+
+    for record in SEED_DOCUMENT_LINK_SUGGESTIONS:
+        _upsert_seed_by_id(
+            session,
+            DocumentLinkSuggestion,
+            record,
+            _document_link_suggestion_values(
+                record,
+                document_by_legacy_id=document_by_legacy_id,
+                client_by_legacy_id=client_by_legacy_id,
+                site_by_legacy_id=site_by_legacy_id,
+                job_by_legacy_id=job_by_legacy_id,
+                bmp_by_legacy_id=bmp_by_legacy_id,
+                observation_by_legacy_id=observation_by_legacy_id,
+                evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+                email_by_legacy_id=empty_email_by_legacy_id,
+                ai_draft_by_legacy_id=empty_ai_draft_by_legacy_id,
             ),
         )
 
@@ -1822,8 +2704,9 @@ def seed(session: Session) -> Organization:
             ),
         )
 
+    ai_draft_by_legacy_id: dict[str, AiDraft] = {}
     for record in SEED_AI_DRAFTS:
-        _upsert_seed_ai_draft(
+        draft = _upsert_seed_ai_draft(
             session,
             record,
             _ai_draft_values(
@@ -1832,6 +2715,26 @@ def seed(session: Session) -> Organization:
                 client_by_legacy_id,
                 site_by_legacy_id,
                 job_by_legacy_id,
+            ),
+        )
+        ai_draft_by_legacy_id[record["legacy_id"]] = draft
+
+    for record in SEED_RECORD_LINKS:
+        _upsert_seed_by_id(
+            session,
+            RecordLink,
+            record,
+            _record_link_values(
+                record,
+                client_by_legacy_id=client_by_legacy_id,
+                site_by_legacy_id=site_by_legacy_id,
+                job_by_legacy_id=job_by_legacy_id,
+                bmp_by_legacy_id=bmp_by_legacy_id,
+                observation_by_legacy_id=observation_by_legacy_id,
+                evidence_file_by_legacy_id=evidence_file_by_legacy_id,
+                document_by_legacy_id=document_by_legacy_id,
+                email_by_legacy_id=email_by_legacy_id,
+                ai_draft_by_legacy_id=ai_draft_by_legacy_id,
             ),
         )
 
@@ -1873,12 +2776,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(
                 "Deleted seed_dev rows: "
                 f"{deleted['clients']} clients, {deleted['sites']} sites, "
-                f"{deleted['jobs']} jobs, {deleted['reminders']} reminders, "
+                f"{deleted['jobs']} jobs, {deleted['bmp_systems']} BMP systems, "
+                f"{deleted['observations']} observations, {deleted['reminders']} reminders, "
                 f"{deleted['evidence_files']} files, "
+                f"{deleted['record_notes']} notes, {deleted['knowledge_items']} knowledge items, "
+                f"{deleted['document_records']} documents, "
                 f"{deleted['email_import_batches']} email batches, "
                 f"{deleted['email_messages']} emails, "
                 f"{deleted['email_record_links']} email links, "
                 f"{deleted['ai_drafts']} AI drafts, "
+                f"{deleted['record_links']} record links, "
                 f"{deleted['product_ideas']} product ideas, "
                 f"{deleted['product_decisions']} product decisions.",
             )
@@ -1889,10 +2796,14 @@ def main(argv: Sequence[str] | None = None) -> None:
             "Seeded demo CRM data: "
             f"{counts['organizations']} organization, {counts['clients']} clients, "
             f"{counts['sites']} sites, {counts['jobs']} jobs, "
+            f"{counts['bmp_systems']} BMP systems, {counts['observations']} observations, "
             f"{counts['reminders']} reminders, {counts['evidence_files']} files, "
+            f"{counts['record_notes']} notes, {counts['knowledge_items']} knowledge items, "
+            f"{counts['document_records']} documents, "
             f"{counts['email_import_batches']} email batch, "
             f"{counts['email_messages']} emails, "
             f"{counts['ai_drafts']} AI drafts, "
+            f"{counts['record_links']} record links, "
             f"{counts['product_ideas']} product ideas, "
             f"{counts['product_decisions']} product decisions.",
         )

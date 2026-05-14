@@ -536,6 +536,315 @@ export type EvidenceFileListOptions = {
   offset?: number;
 };
 
+export type IntelligenceRecordType =
+  | "client"
+  | "site"
+  | "job"
+  | "bmp_system"
+  | "observation"
+  | "evidence_file"
+  | "document"
+  | "email_message"
+  | "ai_draft";
+
+export type BmpSystem = {
+  id: UUID;
+  organization_id: UUID;
+  site_id: UUID;
+  system_code: string | null;
+  system_type: string;
+  name: string | null;
+  location_description: string | null;
+  notes: string | null;
+  legacy_source: string | null;
+  legacy_id: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type Observation = {
+  id: UUID;
+  organization_id: UUID;
+  job_id: UUID;
+  system_id: UUID | null;
+  observation_type: string | null;
+  finding: string | null;
+  recommendation: string | null;
+  severity: string | null;
+  maintenance_needed: boolean | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type RecordLink = {
+  id: UUID;
+  organization_id: UUID;
+  source_type: IntelligenceRecordType | string;
+  source_id: UUID;
+  target_type: IntelligenceRecordType | string;
+  target_id: UUID;
+  relationship_type: string;
+  confidence: number | null;
+  link_reason: string | null;
+  created_by: UUID | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type RecordLinkCreateInput = {
+  source_type: IntelligenceRecordType | string;
+  source_id: UUID;
+  target_type: IntelligenceRecordType | string;
+  target_id: UUID;
+  relationship_type?: string;
+  confidence?: number | null;
+  link_reason?: string | null;
+};
+
+export type RecordLinkUpdateInput = {
+  relationship_type?: string;
+  confidence?: number | null;
+  link_reason?: string | null;
+};
+
+export type RecordLinkListOptions = {
+  organizationId: UUID;
+  sourceType?: IntelligenceRecordType | string;
+  sourceId?: UUID;
+  targetType?: IntelligenceRecordType | string;
+  targetId?: UUID;
+  relationshipType?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type RecordNote = {
+  id: UUID;
+  organization_id: UUID;
+  parent_type: IntelligenceRecordType | string;
+  parent_id: UUID;
+  title: string;
+  body: string;
+  note_type: string;
+  visibility: string;
+  created_by: UUID | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type RecordNoteCreateInput = {
+  parent_type: IntelligenceRecordType | string;
+  parent_id: UUID;
+  title: string;
+  body: string;
+  note_type?: string;
+  visibility?: string;
+};
+
+export type RecordNoteUpdateInput = Partial<{
+  title: string;
+  body: string;
+  note_type: string;
+  visibility: string;
+}>;
+
+export type RecordNoteListOptions = {
+  organizationId: UUID;
+  parentType?: IntelligenceRecordType | string;
+  parentId?: UUID;
+  noteType?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type KnowledgeType =
+  | "site_access"
+  | "client_preference"
+  | "permit_note"
+  | "report_language"
+  | "historical_context";
+
+export type KnowledgeItem = {
+  id: UUID;
+  organization_id: UUID;
+  client_id: UUID | null;
+  site_id: UUID | null;
+  job_id: UUID | null;
+  title: string;
+  content: string;
+  knowledge_type: KnowledgeType | string;
+  tags_json: string[] | null;
+  source_type: IntelligenceRecordType | string | null;
+  source_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type KnowledgeItemCreateInput = {
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+  title: string;
+  content: string;
+  knowledge_type: KnowledgeType | string;
+  tags_json?: string[] | null;
+  source_type?: IntelligenceRecordType | string | null;
+  source_id?: UUID | null;
+};
+
+export type KnowledgeItemUpdateInput = Partial<KnowledgeItemCreateInput>;
+
+export type KnowledgeItemListOptions = {
+  organizationId: UUID;
+  clientId?: UUID;
+  siteId?: UUID;
+  jobId?: UUID;
+  knowledgeType?: KnowledgeType | string;
+  limit?: number;
+  offset?: number;
+};
+
+export type DocumentRecord = {
+  id: UUID;
+  organization_id: UUID;
+  evidence_file_id: UUID | null;
+  source: string;
+  file_name: string;
+  file_url: string | null;
+  storage_path: string | null;
+  mime_type: string | null;
+  document_type: string;
+  client_id: UUID | null;
+  site_id: UUID | null;
+  job_id: UUID | null;
+  status: string;
+  extraction_status: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type DocumentRecordCreateInput = {
+  evidence_file_id?: UUID | null;
+  source?: string;
+  file_name: string;
+  file_url?: string | null;
+  storage_path?: string | null;
+  mime_type?: string | null;
+  document_type?: string;
+  client_id?: UUID | null;
+  site_id?: UUID | null;
+  job_id?: UUID | null;
+  status?: string;
+  extraction_status?: string;
+};
+
+export type DocumentRecordUpdateInput = Partial<DocumentRecordCreateInput>;
+
+export type DocumentRecordListOptions = {
+  organizationId: UUID;
+  clientId?: UUID;
+  siteId?: UUID;
+  jobId?: UUID;
+  status?: string;
+  documentType?: string;
+  extractionStatus?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type DocumentTextChunk = {
+  id: UUID;
+  organization_id: UUID;
+  document_id: UUID;
+  chunk_index: number;
+  page_number: number | null;
+  heading: string | null;
+  text: string;
+  token_count: number | null;
+  created_at: string;
+};
+
+export type DocumentTextChunkCreateInput = {
+  chunk_index: number;
+  page_number?: number | null;
+  heading?: string | null;
+  text: string;
+  token_count?: number | null;
+};
+
+export type DocumentExtractedField = {
+  id: UUID;
+  organization_id: UUID;
+  document_id: UUID;
+  field_name: string;
+  field_value: string;
+  confidence: number | null;
+  source_page: number | null;
+  review_status: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type DocumentExtractedFieldCreateInput = {
+  field_name: string;
+  field_value: string;
+  confidence?: number | null;
+  source_page?: number | null;
+  review_status?: string;
+};
+
+export type DocumentExtractedFieldUpdateInput = Partial<DocumentExtractedFieldCreateInput>;
+
+export type DocumentLinkSuggestion = {
+  id: UUID;
+  organization_id: UUID;
+  document_id: UUID;
+  target_type: IntelligenceRecordType | string;
+  target_id: UUID | null;
+  target_label: string | null;
+  confidence: number | null;
+  reason: string | null;
+  review_status: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type DocumentLinkSuggestionCreateInput = {
+  target_type: IntelligenceRecordType | string;
+  target_id?: UUID | null;
+  target_label?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+  review_status?: string;
+};
+
+export type DocumentLinkSuggestionUpdateInput = Partial<DocumentLinkSuggestionCreateInput>;
+
+export type BmpSystemListOptions = {
+  organizationId: UUID;
+  siteId?: UUID;
+  limit?: number;
+  offset?: number;
+};
+
+export type ObservationListOptions = {
+  organizationId: UUID;
+  jobId?: UUID;
+  siteId?: UUID;
+  systemId?: UUID;
+  limit?: number;
+  offset?: number;
+};
+
 export type EmailMessageStatus = "unlinked" | "linked" | "archived";
 
 export type EmailMessage = {

@@ -6,9 +6,23 @@ import type {
   AiDraftUpdateInput,
   AiStatus,
   AuthStatusResponse,
+  BmpSystem,
+  BmpSystemListOptions,
   ClientSummaryDraftInput,
   Client,
   ClientFormInput,
+  DocumentExtractedField,
+  DocumentExtractedFieldCreateInput,
+  DocumentExtractedFieldUpdateInput,
+  DocumentLinkSuggestion,
+  DocumentLinkSuggestionCreateInput,
+  DocumentLinkSuggestionUpdateInput,
+  DocumentRecord,
+  DocumentRecordCreateInput,
+  DocumentRecordListOptions,
+  DocumentRecordUpdateInput,
+  DocumentTextChunk,
+  DocumentTextChunkCreateInput,
   DraftReplyInput,
   DraftReplyResponse,
   EmailActionItemsResponse,
@@ -32,6 +46,10 @@ import type {
   IntegrationsStatus,
   Job,
   JobFormInput,
+  KnowledgeItem,
+  KnowledgeItemCreateInput,
+  KnowledgeItemListOptions,
+  KnowledgeItemUpdateInput,
   ListOptions,
   ListResponse,
   LoginInput,
@@ -60,6 +78,16 @@ import type {
   ReportSectionDraftInput,
   ReportSectionDraftResponse,
   ReportReadiness,
+  Observation,
+  ObservationListOptions,
+  RecordLink,
+  RecordLinkCreateInput,
+  RecordLinkListOptions,
+  RecordLinkUpdateInput,
+  RecordNote,
+  RecordNoteCreateInput,
+  RecordNoteListOptions,
+  RecordNoteUpdateInput,
   Reminder,
   ReminderCreate,
   ReminderListOptions,
@@ -732,6 +760,329 @@ export function archiveFileLink(
     method: "DELETE",
     query: { organization_id: organizationId },
   });
+}
+
+export function listBmpSystems(
+  options: BmpSystemListOptions,
+): Promise<ListResponse<BmpSystem>> {
+  return apiRequest<ListResponse<BmpSystem>>("/v1/bmp-systems", {
+    query: {
+      organization_id: options.organizationId,
+      site_id: options.siteId,
+      limit: options.limit,
+      offset: options.offset,
+    },
+  });
+}
+
+export function listObservations(
+  options: ObservationListOptions,
+): Promise<ListResponse<Observation>> {
+  return apiRequest<ListResponse<Observation>>("/v1/observations", {
+    query: {
+      organization_id: options.organizationId,
+      job_id: options.jobId,
+      site_id: options.siteId,
+      system_id: options.systemId,
+      limit: options.limit,
+      offset: options.offset,
+    },
+  });
+}
+
+export function listRecordLinks(
+  options: RecordLinkListOptions,
+): Promise<ListResponse<RecordLink>> {
+  return apiRequest<ListResponse<RecordLink>>("/v1/record-links", {
+    query: {
+      organization_id: options.organizationId,
+      source_type: options.sourceType,
+      source_id: options.sourceId,
+      target_type: options.targetType,
+      target_id: options.targetId,
+      relationship_type: options.relationshipType,
+      limit: options.limit,
+      offset: options.offset,
+    },
+  });
+}
+
+export function createRecordLink(
+  organizationId: UUID,
+  input: RecordLinkCreateInput,
+): Promise<RecordLink> {
+  return apiRequest<RecordLink>("/v1/record-links", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateRecordLink(
+  linkId: UUID,
+  organizationId: UUID,
+  input: RecordLinkUpdateInput,
+): Promise<RecordLink> {
+  return apiRequest<RecordLink>(`/v1/record-links/${linkId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveRecordLink(
+  linkId: UUID,
+  organizationId: UUID,
+): Promise<RecordLink> {
+  return apiRequest<RecordLink>(`/v1/record-links/${linkId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listRecordNotes(
+  options: RecordNoteListOptions,
+): Promise<ListResponse<RecordNote>> {
+  return apiRequest<ListResponse<RecordNote>>("/v1/record-notes", {
+    query: {
+      organization_id: options.organizationId,
+      parent_type: options.parentType,
+      parent_id: options.parentId,
+      note_type: options.noteType,
+      limit: options.limit,
+      offset: options.offset,
+    },
+  });
+}
+
+export function createRecordNote(
+  organizationId: UUID,
+  input: RecordNoteCreateInput,
+): Promise<RecordNote> {
+  return apiRequest<RecordNote>("/v1/record-notes", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateRecordNote(
+  noteId: UUID,
+  organizationId: UUID,
+  input: RecordNoteUpdateInput,
+): Promise<RecordNote> {
+  return apiRequest<RecordNote>(`/v1/record-notes/${noteId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveRecordNote(
+  noteId: UUID,
+  organizationId: UUID,
+): Promise<RecordNote> {
+  return apiRequest<RecordNote>(`/v1/record-notes/${noteId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listKnowledgeItems(
+  options: KnowledgeItemListOptions,
+): Promise<ListResponse<KnowledgeItem>> {
+  return apiRequest<ListResponse<KnowledgeItem>>("/v1/knowledge-items", {
+    query: {
+      organization_id: options.organizationId,
+      client_id: options.clientId,
+      site_id: options.siteId,
+      job_id: options.jobId,
+      knowledge_type: options.knowledgeType,
+      limit: options.limit,
+      offset: options.offset,
+    },
+  });
+}
+
+export function createKnowledgeItem(
+  organizationId: UUID,
+  input: KnowledgeItemCreateInput,
+): Promise<KnowledgeItem> {
+  return apiRequest<KnowledgeItem>("/v1/knowledge-items", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateKnowledgeItem(
+  itemId: UUID,
+  organizationId: UUID,
+  input: KnowledgeItemUpdateInput,
+): Promise<KnowledgeItem> {
+  return apiRequest<KnowledgeItem>(`/v1/knowledge-items/${itemId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveKnowledgeItem(
+  itemId: UUID,
+  organizationId: UUID,
+): Promise<KnowledgeItem> {
+  return apiRequest<KnowledgeItem>(`/v1/knowledge-items/${itemId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listDocuments(
+  options: DocumentRecordListOptions,
+): Promise<ListResponse<DocumentRecord>> {
+  return apiRequest<ListResponse<DocumentRecord>>("/v1/documents", {
+    query: {
+      organization_id: options.organizationId,
+      client_id: options.clientId,
+      site_id: options.siteId,
+      job_id: options.jobId,
+      status: options.status,
+      document_type: options.documentType,
+      extraction_status: options.extractionStatus,
+      limit: options.limit,
+      offset: options.offset,
+    },
+  });
+}
+
+export function createDocument(
+  organizationId: UUID,
+  input: DocumentRecordCreateInput,
+): Promise<DocumentRecord> {
+  return apiRequest<DocumentRecord>("/v1/documents", {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function updateDocument(
+  documentId: UUID,
+  organizationId: UUID,
+  input: DocumentRecordUpdateInput,
+): Promise<DocumentRecord> {
+  return apiRequest<DocumentRecord>(`/v1/documents/${documentId}`, {
+    method: "PATCH",
+    query: { organization_id: organizationId },
+    body: input,
+  });
+}
+
+export function archiveDocument(
+  documentId: UUID,
+  organizationId: UUID,
+): Promise<DocumentRecord> {
+  return apiRequest<DocumentRecord>(`/v1/documents/${documentId}`, {
+    method: "DELETE",
+    query: { organization_id: organizationId },
+  });
+}
+
+export function listDocumentChunks(
+  documentId: UUID,
+  organizationId: UUID,
+): Promise<ListResponse<DocumentTextChunk>> {
+  return apiRequest<ListResponse<DocumentTextChunk>>(
+    `/v1/documents/${documentId}/chunks`,
+    { query: { organization_id: organizationId } },
+  );
+}
+
+export function createDocumentChunk(
+  documentId: UUID,
+  organizationId: UUID,
+  input: DocumentTextChunkCreateInput,
+): Promise<DocumentTextChunk> {
+  return apiRequest<DocumentTextChunk>(`/v1/documents/${documentId}/chunks`, {
+    method: "POST",
+    body: { ...input, organization_id: organizationId },
+  });
+}
+
+export function listDocumentExtractedFields(
+  documentId: UUID,
+  organizationId: UUID,
+): Promise<ListResponse<DocumentExtractedField>> {
+  return apiRequest<ListResponse<DocumentExtractedField>>(
+    `/v1/documents/${documentId}/extracted-fields`,
+    { query: { organization_id: organizationId } },
+  );
+}
+
+export function createDocumentExtractedField(
+  documentId: UUID,
+  organizationId: UUID,
+  input: DocumentExtractedFieldCreateInput,
+): Promise<DocumentExtractedField> {
+  return apiRequest<DocumentExtractedField>(
+    `/v1/documents/${documentId}/extracted-fields`,
+    {
+      method: "POST",
+      body: { ...input, organization_id: organizationId },
+    },
+  );
+}
+
+export function updateDocumentExtractedField(
+  documentId: UUID,
+  fieldId: UUID,
+  organizationId: UUID,
+  input: DocumentExtractedFieldUpdateInput,
+): Promise<DocumentExtractedField> {
+  return apiRequest<DocumentExtractedField>(
+    `/v1/documents/${documentId}/extracted-fields/${fieldId}`,
+    {
+      method: "PATCH",
+      query: { organization_id: organizationId },
+      body: input,
+    },
+  );
+}
+
+export function listDocumentLinkSuggestions(
+  documentId: UUID,
+  organizationId: UUID,
+): Promise<ListResponse<DocumentLinkSuggestion>> {
+  return apiRequest<ListResponse<DocumentLinkSuggestion>>(
+    `/v1/documents/${documentId}/link-suggestions`,
+    { query: { organization_id: organizationId } },
+  );
+}
+
+export function createDocumentLinkSuggestion(
+  documentId: UUID,
+  organizationId: UUID,
+  input: DocumentLinkSuggestionCreateInput,
+): Promise<DocumentLinkSuggestion> {
+  return apiRequest<DocumentLinkSuggestion>(
+    `/v1/documents/${documentId}/link-suggestions`,
+    {
+      method: "POST",
+      body: { ...input, organization_id: organizationId },
+    },
+  );
+}
+
+export function updateDocumentLinkSuggestion(
+  documentId: UUID,
+  suggestionId: UUID,
+  organizationId: UUID,
+  input: DocumentLinkSuggestionUpdateInput,
+): Promise<DocumentLinkSuggestion> {
+  return apiRequest<DocumentLinkSuggestion>(
+    `/v1/documents/${documentId}/link-suggestions/${suggestionId}`,
+    {
+      method: "PATCH",
+      query: { organization_id: organizationId },
+      body: input,
+    },
+  );
 }
 
 export function listEmailMessages(

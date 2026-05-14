@@ -26,10 +26,15 @@ EXPECTED_COUNTS = {
     "jobs": 8,
     "reminders": 4,
     "open_reminders": 3,
-    "files": 7,
+    "files": 9,
     "email_messages": 5,
     "ai_drafts": 3,
     "email_import_batches": 1,
+    "bmp_systems": 4,
+    "observations": 4,
+    "record_notes": 3,
+    "knowledge_items": 4,
+    "documents": 3,
     "product_ideas": 21,
     "product_decisions": 8,
 }
@@ -113,6 +118,11 @@ def run_smoke(base_url: str, organization_id: str) -> None:
         {**query, "status": "open"},
     )
     files = _get_json(base_url, "/v1/files", query)
+    bmp_systems = _get_json(base_url, "/v1/bmp-systems", query)
+    observations = _get_json(base_url, "/v1/observations", query)
+    record_notes = _get_json(base_url, "/v1/record-notes", query)
+    knowledge_items = _get_json(base_url, "/v1/knowledge-items", query)
+    documents = _get_json(base_url, "/v1/documents", query)
     email_messages = _get_json(base_url, "/v1/email-messages", query)
     ai_drafts = _get_json(base_url, "/v1/ai-drafts", query)
     email_import_batches = _get_json(base_url, "/v1/email-import-batches", query)
@@ -129,6 +139,11 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     _require_count("reminders", reminders, EXPECTED_COUNTS["reminders"])
     _require_count("open reminders", open_reminders, EXPECTED_COUNTS["open_reminders"])
     _require_count("files", files, EXPECTED_COUNTS["files"])
+    _require_count("BMP systems", bmp_systems, EXPECTED_COUNTS["bmp_systems"])
+    _require_count("observations", observations, EXPECTED_COUNTS["observations"])
+    _require_count("record notes", record_notes, EXPECTED_COUNTS["record_notes"])
+    _require_count("knowledge items", knowledge_items, EXPECTED_COUNTS["knowledge_items"])
+    _require_count("documents", documents, EXPECTED_COUNTS["documents"])
     _require_count("email messages", email_messages, EXPECTED_COUNTS["email_messages"])
     _require_count("AI drafts", ai_drafts, EXPECTED_COUNTS["ai_drafts"])
     _require_count("email import batches", email_import_batches, EXPECTED_COUNTS["email_import_batches"])
@@ -222,6 +237,11 @@ def run_smoke(base_url: str, organization_id: str) -> None:
     print(f"jobs: {jobs['total']} - {_sample_names(jobs)}")
     print(f"reminders: {reminders['total']} ({open_reminders['total']} open)")
     print(f"files: {files['total']}")
+    print(f"BMP systems: {bmp_systems['total']}")
+    print(f"observations: {observations['total']}")
+    print(f"record notes: {record_notes['total']}")
+    print(f"knowledge items: {knowledge_items['total']}")
+    print(f"documents: {documents['total']}")
     print(f"email messages: {email_messages['total']}")
     print(f"AI drafts: {ai_drafts['total']}")
     print(f"email import batches: {email_import_batches['total']}")

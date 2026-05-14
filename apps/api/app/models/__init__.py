@@ -24,6 +24,15 @@ from app.models.outlook_connection import OutlookConnection
 from app.models.product import ProductDecision, ProductIdea
 from app.models.reminder import Reminder
 from app.models.report import Report
+from app.models.site_intelligence import (
+    DocumentExtractedField,
+    DocumentLinkSuggestion,
+    DocumentRecord,
+    DocumentTextChunk,
+    KnowledgeItem,
+    RecordLink,
+    RecordNote,
+)
 from app.models.site import Site
 from app.models.user import OrganizationMembership, User
 
@@ -33,6 +42,10 @@ __all__ = [
     "BmpSystem",
     "Client",
     "Contact",
+    "DocumentExtractedField",
+    "DocumentLinkSuggestion",
+    "DocumentRecord",
+    "DocumentTextChunk",
     "EmailImportBatch",
     "EmailMessage",
     "EmailRecordLink",
@@ -44,6 +57,7 @@ __all__ = [
     "ImportRow",
     "ServiceCatalog",
     "SiteAlias",
+    "KnowledgeItem",
     "Job",
     "Observation",
     "Organization",
@@ -53,6 +67,8 @@ __all__ = [
     "ProductIdea",
     "Reminder",
     "Report",
+    "RecordLink",
+    "RecordNote",
     "Site",
     "User",
 ]
