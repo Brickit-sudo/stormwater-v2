@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import re
 import sys
 from collections import Counter, defaultdict
@@ -19,6 +20,27 @@ EXPECTED_EXPORTS = {
     "orders": "Order_1778108323.xlsx",
     "sites": "Site_Information_1778107854.xlsx",
 }
+
+TINY_CLIENT_LIMIT = 5
+TINY_SITE_LIMIT = 10
+
+SITE_STATUS_MAPPING = {
+    "active": "active",
+    "inactive": "inactive",
+    "on hold": "on_hold",
+    "onhold": "on_hold",
+    "archived": "archived",
+    "archive": "archived",
+}
+
+SITE_STATUS_MAPPING_REVIEW_ROWS = (
+    ("Active", "active", "Clear direct mapping."),
+    ("Inactive", "inactive", "Clear direct mapping."),
+    ("On Hold", "on_hold", "Clear direct mapping."),
+    ("Archived", "archived", "Clear direct mapping."),
+    ("Blank", "active for validation sample only", "Requires Bryce review before import."),
+    ("Any other raw value", "active for validation sample only", "Do not import until Bryce reviews."),
+)
 
 
 @dataclass(frozen=True)
@@ -173,6 +195,60 @@ def _map_client_status(value: str) -> str:
     return ""
 
 
+def _status_key(value: Any) -> str:
+    return re.sub(r"[\s_-]+", " ", clean(value).casefold()).strip()
+
+
+def _raw_status_label(value: Any) -> str:
+    return clean(value) or "<blank>"
+
+
+def _map_site_status(value: Any) -> tuple[str, bool]:
+    mapped = SITE_STATUS_MAPPING.get(_status_key(value))
+    if mapped:
+        return mapped, False
+    return "active", True
+
+
+def _site_status_rows(status_counts: Counter[str]) -> list[tuple[str, int, str, str]]:
+    rows = []
+    for raw_status, count in status_counts.most_common():
+        status_value = "" if raw_status == "<blank>" else raw_status
+        mapped, defaulted = _map_site_status(status_value)
+        rows.append(
+            (
+                raw_status,
+                count,
+                mapped if not defaulted else "active",
+                "mapped" if not defaulted else "defaulted for validation sample",
+            ),
+        )
+    return rows
+
+
+def _masked_id(kind: str, value: Any) -> str:
+    text = clean(value)
+    if not text:
+        return f"{kind}#blank"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
+    return f"{kind}#{digest}"
+
+
+def _top_masked_rows(counter: Counter[str], kind: str, limit: int = 10) -> list[tuple[str, int]]:
+    return [(_masked_id(kind, value), count) for value, count in counter.most_common(limit)]
+
+
+def _invalid_address_fields(row: dict[str, str]) -> list[str]:
+    issues = []
+    state = _first_nonempty(row.get("STATE"), row.get("State"))
+    if state and not re.match(r"^[A-Za-z]{2}$", state):
+        issues.append("state")
+    zip_code = _first_nonempty(row.get("ZIP"), row.get("Zip"))
+    if zip_code and not re.match(r"^\d{5}(-\d{4})?$", zip_code):
+        issues.append("zip")
+    return issues
+
+
 def _first_nonempty(*values: Any) -> str:
     for value in values:
         text = clean(value)
@@ -213,13 +289,20 @@ def _source_rows(tables: dict[str, TableData]) -> list[tuple[str, str, int, str]
 def _render_mapping_report(
     *,
     tables: dict[str, TableData],
+    sample_label: str,
     client_rows: Sequence[dict[str, str]],
     site_rows: Sequence[dict[str, str]],
     candidate_sites: int,
     site_rejections: Counter[str],
     client_rejections: Counter[str],
+    contact_skips: Counter[str],
+    relationship_reasons: Counter[str],
+    unresolved_site_ids: Counter[str],
+    unresolved_client_ids: Counter[str],
     site_rows_by_id: dict[str, list[dict[str, str]]],
     client_account_names: dict[str, set[str]],
+    site_status_counts: Counter[str],
+    site_status_default_reasons: Counter[str],
     site_status_defaulted: int,
     site_urls_omitted: int,
 ) -> str:
@@ -237,12 +320,26 @@ def _render_mapping_report(
     )
     duplicate_site_groups = sum(1 for rows in site_rows_by_id.values() if len(rows) > 1)
     duplicate_contact_client_groups = sum(1 for names in client_account_names.values() if len(names) > 1)
+    relationship_rows = [
+        ("site has no Client ID", relationship_reasons.get("site_has_no_client_id", 0)),
+        ("Site ID not found in Leads", relationship_reasons.get("site_id_not_found_in_leads", 0)),
+        ("Client ID not found in Contacts", relationship_reasons.get("client_id_not_found_in_contacts", 0)),
+        (
+            "duplicate/ambiguous Client ID",
+            relationship_reasons.get("linked_client_ambiguous_account_name", 0)
+            + relationship_reasons.get("ambiguous_account_name", 0),
+        ),
+        ("blank Site ID", relationship_reasons.get("blank_site_id", 0)),
+        ("blank site name", relationship_reasons.get("missing_site_name", 0)),
+        ("invalid address fields (diagnostic only)", relationship_reasons.get("invalid_address_fields", 0)),
+    ]
+    safe_for_next_sample = not client_rejections and not site_rejections and site_status_defaulted == 0
 
     lines = [
         "# Monday Mapping Review",
         "",
         f"- Generated at: `{datetime.now(timezone.utc).isoformat()}`",
-        "- Scope: private Monday export mapping to V2 tiny Clients/Sites templates.",
+        f"- Scope: private Monday export mapping to V2 {sample_label} Clients/Sites templates.",
         "- Privacy: no full source records, client names, site names, addresses, emails, URLs, or IDs are included here.",
         "- Safety: no database writes, no provider calls, no imports.",
         "",
@@ -286,20 +383,45 @@ def _render_mapping_report(
             ],
         ),
         "",
-        "## Normalized Tiny Sample",
+        f"## Normalized {sample_label.title()} Sample",
         f"- Clients written: {len(client_rows)}",
         f"- Sites written: {len(site_rows)}",
         f"- Candidate sites ready before sample limit: {candidate_sites}",
         f"- Sites excluded or unresolved before sampling: {sum(site_rejections.values())}",
         f"- Client candidates excluded before sampling: {sum(client_rejections.values())}",
-        f"- Site statuses defaulted to `active` pending Bryce review: {site_status_defaulted}",
+        f"- Site rows defaulted to `active` in selected sample pending Bryce review: {site_status_defaulted}",
         f"- Non-http(s) site Gdrive values omitted from selected sample: {site_urls_omitted}",
+        "",
+        "## Monday Site Status Values Found",
+        *_markdown_table(
+            ["Raw Monday Status", "Rows", "Proposed V2 Status", "Action"],
+            _site_status_rows(site_status_counts),
+        ),
+        "",
+        "## Proposed V2 Site Status Mapping",
+        *_markdown_table(["Raw Monday Status", "V2 Status", "Notes"], SITE_STATUS_MAPPING_REVIEW_ROWS),
+        "",
+        "## Rows Defaulted To Active",
+        f"- Selected sample rows defaulted to `active`: {site_status_defaulted}",
+        *_markdown_table(["Default Reason", "Rows"], sorted(site_status_default_reasons.items())),
         "",
         "## Excluded / Unresolved Site Reasons",
         *_markdown_table(["Reason", "Rows Affected"], sorted(site_rejections.items())),
         "",
         "## Excluded Client Candidate Reasons",
         *_markdown_table(["Reason", "Rows Affected"], sorted(client_rejections.items())),
+        "",
+        "## Contact Rows Skipped Before Client Candidate Review",
+        *_markdown_table(["Reason", "Rows Affected"], sorted(contact_skips.items())),
+        "",
+        "## Missing Relationship / Data Quality Signals",
+        *_markdown_table(["Signal", "Rows Affected"], relationship_rows),
+        "",
+        "## Top Sanitized Unresolved Site IDs",
+        *_markdown_table(["Sanitized Site Token", "Rows Affected"], _top_masked_rows(unresolved_site_ids, "site")),
+        "",
+        "## Top Sanitized Unresolved Client IDs",
+        *_markdown_table(["Sanitized Client Token", "Rows Affected"], _top_masked_rows(unresolved_client_ids, "client")),
         "",
         "## Missing Required Columns",
         *missing_required_lines,
@@ -309,14 +431,24 @@ def _render_mapping_report(
         f"- Contacts ambiguous Client ID to Account groups: {duplicate_contact_client_groups}",
         "",
         "## Columns That Need Bryce Review",
-        "- Site Information `Status` did not map cleanly to V2 site statuses in this export; selected sample sites were defaulted to `active` only for validation.",
+        "- Site Information `Status` is mostly blank or unclear in this export; any default to `active` is for validation only.",
         "- Confirm whether Contacts `Account` is the right canonical V2 Client name.",
         "- Confirm whether Site Information `Gdrive` is a site folder URL when it is an http(s) URL.",
         "- Review Order export mapping after Clients/Sites pass; jobs were intentionally not normalized now.",
         "- Decide how to treat Site Information rows with no Leads `Site ID` to `Client ID` link.",
         "",
+        "## Recommendation",
+        "- Bryce should manually review Monday Site Information `Status` values before any import.",
+        "- Bryce should review excluded site/client relationship buckets before expanding beyond samples.",
+        (
+            "- Medium sample safety: clean for import readiness only if the generated CSVs pass validator and the "
+            "status defaults are accepted as sample-only placeholders."
+            if not safe_for_next_sample
+            else "- Medium sample safety: relationship diagnostics are clean; still validate only and do not import."
+        ),
+        "",
         "## Recommended Next Action",
-        "- Run the tiny sample validator only. If clean, review these private CSVs manually before increasing sample size.",
+        "- Run the sample validator only. If clean, review the private CSVs manually before increasing sample size.",
         "- Do not import, do not write to the database, and do not normalize Jobs/Documents until Clients/Sites are accepted.",
     ]
     return "\n".join(lines)
@@ -333,8 +465,9 @@ def prepare_tiny_sample(
     clients_output_path: Path,
     sites_output_path: Path,
     report_path: Path,
-    max_clients: int = 5,
-    max_sites: int = 10,
+    max_clients: int = TINY_CLIENT_LIMIT,
+    max_sites: int = TINY_SITE_LIMIT,
+    sample_label: str = "tiny",
 ) -> PrepSummary:
     if max_clients < 1:
         raise ValueError("max_clients must be at least 1.")
@@ -350,25 +483,35 @@ def prepare_tiny_sample(
 
     client_account_names: dict[str, set[str]] = defaultdict(set)
     client_contact_rows: dict[str, list[dict[str, str]]] = defaultdict(list)
+    all_contact_client_ids: set[str] = set()
+    contact_skips: Counter[str] = Counter()
     for row in tables["contacts"].rows:
         client_id = clean(row.get("Client ID"))
         account = clean(row.get("Account"))
-        if not client_id or not account:
+        if not client_id:
+            contact_skips["blank_client_id"] += 1
+            continue
+        all_contact_client_ids.add(client_id)
+        if not account:
+            contact_skips["blank_account"] += 1
             continue
         client_account_names[client_id].add(_normalized_name(account))
         client_contact_rows[client_id].append(row)
 
     client_candidates: dict[str, dict[str, str]] = {}
     client_rejections: Counter[str] = Counter()
+    client_rejection_reason_by_id: dict[str, str] = {}
     for client_id, contact_rows in client_contact_rows.items():
         account_keys = client_account_names[client_id]
         if len(account_keys) != 1:
             client_rejections["ambiguous_account_name"] += len(contact_rows)
+            client_rejection_reason_by_id[client_id] = "ambiguous_account_name"
             continue
         chosen = contact_rows[0]
         status = _map_client_status(chosen.get("Active Status", ""))
         if not status:
             client_rejections["unmapped_client_status"] += len(contact_rows)
+            client_rejection_reason_by_id[client_id] = "unmapped_client_status"
             continue
         email = clean(chosen.get("Email"))
         if email and not _valid_email(email):
@@ -387,36 +530,74 @@ def prepare_tiny_sample(
         }
 
     site_to_client_ids: dict[str, set[str]] = defaultdict(set)
+    lead_site_ids_seen: set[str] = set()
+    lead_blank_client_by_site: Counter[str] = Counter()
     for row in tables["leads"].rows:
         site_id = clean(row.get("Site ID"))
         client_id = clean(row.get("Client ID"))
-        if site_id and client_id:
+        if not site_id:
+            continue
+        lead_site_ids_seen.add(site_id)
+        if client_id:
             site_to_client_ids[site_id].add(client_id)
-
-    site_rows_by_id: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for row in tables["sites"].rows:
-        site_id = clean(row.get("Site ID"))
-        if site_id:
-            site_rows_by_id[site_id].append(row)
+        else:
+            lead_blank_client_by_site[site_id] += 1
 
     site_rejections: Counter[str] = Counter()
+    relationship_reasons: Counter[str] = Counter()
+    unresolved_site_ids: Counter[str] = Counter()
+    unresolved_client_ids: Counter[str] = Counter()
+    site_status_counts: Counter[str] = Counter()
+    site_rows_by_id: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in tables["sites"].rows:
+        site_status_counts[_raw_status_label(row.get("Status"))] += 1
+        if _invalid_address_fields(row):
+            relationship_reasons["invalid_address_fields"] += 1
+        site_id = clean(row.get("Site ID"))
+        if not site_id:
+            site_rejections["blank_site_id"] += 1
+            relationship_reasons["blank_site_id"] += 1
+            continue
+        site_rows_by_id[site_id].append(row)
+
     candidate_sites: list[tuple[str, str, dict[str, str]]] = []
     for site_id, site_rows in site_rows_by_id.items():
         if len(site_rows) != 1:
             site_rejections["duplicate_site_id_in_site_information"] += len(site_rows)
+            unresolved_site_ids[site_id] += len(site_rows)
             continue
         site_row = site_rows[0]
         if not clean(site_row.get("Name")):
             site_rejections["missing_site_name"] += 1
+            relationship_reasons["missing_site_name"] += 1
+            unresolved_site_ids[site_id] += 1
             continue
         linked_clients = site_to_client_ids.get(site_id, set())
         if len(linked_clients) != 1:
-            reason = "ambiguous_site_to_client_link" if len(linked_clients) > 1 else "no_site_to_client_link"
+            if len(linked_clients) > 1:
+                reason = "ambiguous_site_to_client_link"
+            elif site_id in lead_blank_client_by_site:
+                reason = "site_has_no_client_id"
+            else:
+                reason = "site_id_not_found_in_leads"
             site_rejections[reason] += 1
+            relationship_reasons[reason] += 1
+            unresolved_site_ids[site_id] += 1
             continue
         client_id = next(iter(linked_clients))
         if client_id not in client_candidates:
-            site_rejections["no_reviewable_client_candidate"] += 1
+            client_reason = client_rejection_reason_by_id.get(client_id)
+            if client_id not in all_contact_client_ids:
+                reason = "client_id_not_found_in_contacts"
+            elif client_reason == "ambiguous_account_name":
+                reason = "linked_client_ambiguous_account_name"
+            elif client_reason == "unmapped_client_status":
+                reason = "linked_client_unmapped_client_status"
+            else:
+                reason = "no_reviewable_client_candidate"
+            site_rejections[reason] += 1
+            relationship_reasons[reason] += 1
+            unresolved_client_ids[client_id] += 1
             continue
         candidate_sites.append((site_id, client_id, site_row))
 
@@ -464,25 +645,37 @@ def prepare_tiny_sample(
                 "primary_contact_name": client["primary_contact_name"],
                 "email": client["email"],
                 "phone": client["phone"],
-                "notes": f"Tiny validation sample only. Client account sourced from Contacts row {client['source_row']}.",
+                "notes": (
+                    f"{sample_label.title()} validation sample only. "
+                    f"Client account sourced from Contacts row {client['source_row']}."
+                ),
             },
         )
         client_rows_out.append(row)
 
     site_rows_out = []
     site_status_defaulted = 0
+    site_status_default_reasons: Counter[str] = Counter()
     site_urls_omitted = 0
     for site_id, client_id, site in selected_sites:
         drive_url = clean(site.get("Gdrive"))
         if drive_url and not _valid_url(drive_url):
             drive_url = ""
             site_urls_omitted += 1
-        site_status_defaulted += 1
+        site_status, status_defaulted = _map_site_status(site.get("Status", ""))
+        raw_status = clean(site.get("Status"))
+        if status_defaulted:
+            site_status_defaulted += 1
+            site_status_default_reasons["blank_status" if not raw_status else "unmapped_status"] += 1
         notes = (
-            "Tiny validation sample only. Client link proven by Leads Site ID to Client ID. "
+            f"{sample_label.title()} validation sample only. "
+            "Client link proven by Leads Site ID to Client ID. "
             f"Site Information row {clean(site.get('__rownum__'))}. "
-            "Status defaulted to active for validation pending Bryce review."
         )
+        if status_defaulted:
+            notes += "Status defaulted to active for validation pending Bryce review."
+        else:
+            notes += f"Status mapped from Monday Status to {site_status}."
         if not drive_url and clean(site.get("Gdrive")):
             notes += " Source Gdrive value omitted because it was not an http(s) URL."
         row = {header: "" for header in site_headers}
@@ -495,7 +688,7 @@ def prepare_tiny_sample(
                 "client_external_id": client_id,
                 "canonical_name": clean(site.get("Name")),
                 "site_code": site_id,
-                "status": "active",
+                "status": site_status,
                 "address": clean(site.get("Address")),
                 "city": _first_nonempty(site.get("CITY"), site.get("City")),
                 "state": _first_nonempty(site.get("STATE"), site.get("State")),
@@ -511,13 +704,20 @@ def prepare_tiny_sample(
 
     report = _render_mapping_report(
         tables=tables,
+        sample_label=sample_label,
         client_rows=client_rows_out,
         site_rows=site_rows_out,
         candidate_sites=len(candidate_sites),
         site_rejections=site_rejections,
         client_rejections=client_rejections,
+        contact_skips=contact_skips,
+        relationship_reasons=relationship_reasons,
+        unresolved_site_ids=unresolved_site_ids,
+        unresolved_client_ids=unresolved_client_ids,
         site_rows_by_id=site_rows_by_id,
         client_account_names=client_account_names,
+        site_status_counts=site_status_counts,
+        site_status_default_reasons=site_status_default_reasons,
         site_status_defaulted=site_status_defaulted,
         site_urls_omitted=site_urls_omitted,
     )
@@ -551,15 +751,15 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     default_export_dir = repo_root / "docs" / "import_templates" / "v2" / "private" / "monday_exports"
     private_dir = repo_root / "docs" / "import_templates" / "v2" / "private"
     parser = argparse.ArgumentParser(
-        description="Prepare a tiny private Monday Clients/Sites sample for V2 validation. No imports or DB writes.",
+        description="Prepare a private Monday Clients/Sites sample for V2 validation. No imports or DB writes.",
     )
     parser.add_argument("--export-dir", type=Path, default=default_export_dir)
     parser.add_argument("--contacts", type=Path)
     parser.add_argument("--leads", type=Path)
     parser.add_argument("--orders", type=Path)
     parser.add_argument("--sites", type=Path)
-    parser.add_argument("--max-clients", type=int, default=5)
-    parser.add_argument("--max-sites", type=int, default=10)
+    parser.add_argument("--client-limit", "--max-clients", dest="client_limit", type=int, default=TINY_CLIENT_LIMIT)
+    parser.add_argument("--site-limit", "--max-sites", dest="site_limit", type=int, default=TINY_SITE_LIMIT)
     parser.add_argument("--clients-output", type=Path, default=private_dir / "clients_tiny_sample.csv")
     parser.add_argument("--sites-output", type=Path, default=private_dir / "sites_tiny_sample.csv")
     parser.add_argument(
@@ -602,12 +802,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         clients_output_path=args.clients_output,
         sites_output_path=args.sites_output,
         report_path=args.report_output,
-        max_clients=args.max_clients,
-        max_sites=args.max_sites,
+        max_clients=args.client_limit,
+        max_sites=args.site_limit,
+        sample_label="tiny"
+        if args.client_limit <= TINY_CLIENT_LIMIT and args.site_limit <= TINY_SITE_LIMIT
+        else "medium",
     )
-    print("Prepared Monday tiny sample for validation only.")
+    print("Prepared Monday sample for validation only.")
     print(f"  Clients rows: {summary.clients_written}")
     print(f"  Sites rows:   {summary.sites_written}")
+    print(f"  Candidate sites ready before sample limit: {summary.candidate_sites}")
+    print(f"  Site statuses defaulted to active: {summary.site_status_defaulted}")
     print(f"  Clients CSV:  {summary.clients_path}")
     print(f"  Sites CSV:    {summary.sites_path}")
     print(f"  Review:       {summary.report_path}")

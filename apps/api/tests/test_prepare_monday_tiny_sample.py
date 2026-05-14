@@ -57,9 +57,9 @@ def _fake_exports(tmp_path: Path) -> dict[str, Path]:
         "Site Information",
         ["Name", "Site ID", "Address", "CITY", "STATE", "ZIP", "Gdrive", "Status"],
         [
-            ["North Basin", "site-001", "1 North Way", "Portland", "ME", "04101", "https://example.com/folders/1", ""],
-            ["South Basin", "site-002", "2 South Way", "Portland", "ME", "04102", "", ""],
-            ["West Yard", "site-003", "3 West Way", "Boston", "MA", "02108", "not-a-url", ""],
+            ["North Basin", "site-001", "1 North Way", "Portland", "ME", "04101", "https://example.com/folders/1", "Active"],
+            ["South Basin", "site-002", "2 South Way", "Portland", "ME", "04102", "", "On Hold"],
+            ["West Yard", "site-003", "3 West Way", "Boston", "MA", "02108", "not-a-url", "Review Needed"],
             ["East Yard", "site-004", "4 East Way", "Dover", "NH", "03820", "", ""],
             ["Central Yard", "site-005", "5 Central Way", "Dover", "NH", "03821", "", ""],
             ["Overflow Yard", "site-006", "6 Overflow Way", "Dover", "NH", "03822", "", ""],
@@ -97,11 +97,13 @@ def test_prepare_tiny_sample_writes_valid_private_clients_and_sites(tmp_path: Pa
 
     assert summary.clients_written == 3
     assert summary.sites_written == 5
+    assert summary.site_status_defaulted == 3
     clients = _read_csv(clients_output)
     sites = _read_csv(sites_output)
     client_ids = {row["client_external_id"] for row in clients}
     assert {row["source_system"] for row in clients + sites} == {"monday"}
     assert all(row["client_external_id"] in client_ids for row in sites)
+    assert {row["status"] for row in sites} == {"active", "on_hold"}
 
     validation = validate_import_templates(clients=clients_output, sites=sites_output)
     assert validation["ready"] is True
@@ -116,7 +118,10 @@ def test_prepare_tiny_sample_writes_valid_private_clients_and_sites(tmp_path: Pa
     report = report_output.read_text(encoding="utf-8")
     assert "Acme Group" not in report
     assert "North Basin" not in report
-    assert "no_site_to_client_link" in report
+    assert "Monday Site Status Values Found" in report
+    assert "Review Needed" in report
+    assert "site_id_not_found_in_leads" in report
+    assert "site#" in report
 
 
 def test_prepare_tiny_sample_excludes_unreviewable_clients(tmp_path: Path) -> None:
@@ -146,6 +151,6 @@ def test_prepare_tiny_sample_excludes_unreviewable_clients(tmp_path: Path) -> No
     )
 
     assert summary.client_rejections["unmapped_client_status"] == 1
-    assert summary.site_rejections["no_reviewable_client_candidate"] == 1
+    assert summary.site_rejections["linked_client_unmapped_client_status"] == 1
     assert summary.clients_written == 3
     assert summary.sites_written == 6

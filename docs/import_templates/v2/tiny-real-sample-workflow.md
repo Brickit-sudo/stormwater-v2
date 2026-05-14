@@ -123,7 +123,40 @@ import_validation_reports/
 
 That folder is gitignored because reports may contain private row clues.
 
-## 9. How to read validator results
+## 9. How to prepare Monday samples
+
+The Monday prep helper is validation prep only. It reads the private Monday exports, writes ignored sample CSVs, and writes an ignored aggregate mapping report. It does not import rows, write the database, run migrations, or call providers.
+
+Tiny sample:
+
+```powershell
+cd C:\Users\brolf\Desktop\Stormwater_APP_Clean\stormwater-v2\apps\api
+python scripts\prepare_monday_tiny_sample.py
+```
+
+Medium sample:
+
+```powershell
+cd C:\Users\brolf\Desktop\Stormwater_APP_Clean\stormwater-v2\apps\api
+python scripts\prepare_monday_tiny_sample.py `
+  --client-limit 25 `
+  --site-limit 75 `
+  --clients-output ..\..\docs\import_templates\v2\private\clients_medium_sample.csv `
+  --sites-output ..\..\docs\import_templates\v2\private\sites_medium_sample.csv `
+  --report-output ..\..\import_validation_reports\monday-medium-mapping-review.md
+```
+
+Review the ignored mapping report for:
+
+- Monday Site Information `Status` values and proposed V2 status mappings.
+- Rows defaulted to `active` for validation only.
+- Excluded or unresolved site relationship buckets.
+- Excluded client candidate buckets.
+- Sanitized unresolved site/client tokens.
+
+Do not commit the generated CSVs or reports.
+
+## 10. How to read validator results
 
 Start with the console summary:
 
@@ -137,7 +170,7 @@ Start with the console summary:
 
 Open the Markdown report for exact row numbers and field-level messages.
 
-## 10. Stop conditions
+## 11. Stop conditions
 
 Stop and fix the private CSVs when any of these appear:
 
@@ -154,7 +187,7 @@ Stop and fix the private CSVs when any of these appear:
 
 No orphan Sites. No weak Client mapping. No blind import.
 
-## 11. What files must never be committed
+## 12. What files must never be committed
 
 Never commit:
 
@@ -173,7 +206,7 @@ Never commit:
 
 The committed templates are safe. Private copies and reports are not.
 
-## 12. Next step after clean validation
+## 13. Next step after clean validation
 
 After a clean tiny validation:
 
@@ -181,4 +214,3 @@ After a clean tiny validation:
 2. Save or share only the high-level validation summary, not private row contents.
 3. Do not import anything yet.
 4. Use the clean result to design the next reviewed import step, such as a read-only Import Center preview.
-
