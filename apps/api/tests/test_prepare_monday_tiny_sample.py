@@ -6,7 +6,17 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from scripts.prepare_monday_tiny_sample import generate_monday_review_pack, prepare_tiny_sample
+import pytest
+
+from scripts.prepare_monday_tiny_sample import (
+    CLIENT_STATUS_REVIEW_COLUMNS,
+    DUPLICATE_SITES_REVIEW_COLUMNS,
+    STATUS_DEFAULTS_REVIEW_COLUMNS,
+    UNRESOLVED_SITES_REVIEW_COLUMNS,
+    generate_monday_review_pack,
+    prepare_reviewed_sample,
+    prepare_tiny_sample,
+)
 from scripts.validate_import_templates import validate_import_templates
 
 
@@ -25,6 +35,139 @@ def _write_monday_csv(path: Path, title: str, headers: list[str], rows: list[lis
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as file:
         return list(csv.DictReader(file))
+
+
+def _write_review_csv(path: Path, columns: tuple[str, ...], rows: list[dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in columns})
+
+
+def _review_row(columns: tuple[str, ...], **values: str) -> dict[str, str]:
+    row = {column: "" for column in columns}
+    row.update(values)
+    return row
+
+
+def _write_review_pack(
+    review_dir: Path,
+    *,
+    unresolved_rows: list[dict[str, str]] | None = None,
+    client_status_rows: list[dict[str, str]] | None = None,
+    duplicate_rows: list[dict[str, str]] | None = None,
+    status_default_rows: list[dict[str, str]] | None = None,
+) -> Path:
+    _write_review_csv(
+        review_dir / "unresolved_sites_review.csv",
+        UNRESOLVED_SITES_REVIEW_COLUMNS,
+        unresolved_rows
+        if unresolved_rows is not None
+        else [
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                exclusion_reason="site_has_no_client_id",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="6",
+                site_id="site-unmapped-client",
+                site_name_or_label="Unmapped Client Site",
+                client_id="client-unmapped",
+                exclusion_reason="linked_client_unmapped_client_status",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="9",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site A",
+                exclusion_reason="duplicate_site_id_in_site_information",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="10",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site B",
+                exclusion_reason="duplicate_site_id_in_site_information",
+            ),
+        ],
+    )
+    _write_review_csv(
+        review_dir / "client_status_review.csv",
+        CLIENT_STATUS_REVIEW_COLUMNS,
+        client_status_rows
+        if client_status_rows is not None
+        else [
+            _review_row(
+                CLIENT_STATUS_REVIEW_COLUMNS,
+                source_row_number="4",
+                client_id="client-unmapped",
+                client_name_or_label="Beta LLC",
+                raw_client_status="Needs Review",
+            ),
+        ],
+    )
+    _write_review_csv(
+        review_dir / "duplicate_sites_review.csv",
+        DUPLICATE_SITES_REVIEW_COLUMNS,
+        duplicate_rows
+        if duplicate_rows is not None
+        else [
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="9",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site A",
+                duplicate_group="site_id:site-dup",
+                keep_or_skip="skip",
+            ),
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="10",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site B",
+                duplicate_group="site_id:site-dup",
+                keep_or_skip="skip",
+            ),
+        ],
+    )
+    _write_review_csv(
+        review_dir / "status_defaults_review.csv",
+        STATUS_DEFAULTS_REVIEW_COLUMNS,
+        status_default_rows
+        if status_default_rows is not None
+        else [
+            _review_row(
+                STATUS_DEFAULTS_REVIEW_COLUMNS,
+                source_row_number="3",
+                site_id="site-good",
+                site_name_or_label="Good Site",
+                raw_site_status="Needs Field Review",
+                defaulted_status="active",
+            ),
+        ],
+    )
+    return review_dir
+
+
+def _prepare_reviewed_sample(tmp_path: Path, exports: dict[str, Path], review_dir: Path):
+    return prepare_reviewed_sample(
+        contacts_path=exports["contacts"],
+        leads_path=exports["leads"],
+        orders_path=exports["orders"],
+        sites_path=exports["sites"],
+        clients_template_path=TEMPLATE_DIR / "clients_template.csv",
+        sites_template_path=TEMPLATE_DIR / "sites_template.csv",
+        review_pack_dir=review_dir,
+        clients_output_path=tmp_path / "private" / "clients_reviewed_sample.csv",
+        sites_output_path=tmp_path / "private" / "sites_reviewed_sample.csv",
+        report_dir=tmp_path / "reports" / "reviewed_sample",
+    )
 
 
 def _fake_exports(tmp_path: Path) -> dict[str, Path]:
@@ -278,6 +421,272 @@ def test_generate_review_pack_writes_private_review_files_and_bucket_counts(tmp_
     assert "| Site IDs not found in Leads | 1 |" in readme
     assert "| duplicate Site ID rows | 2 |" in readme
     assert "no database writes, no provider calls" in readme
+
+
+def test_prepare_reviewed_sample_applies_approved_mappings_and_validates(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                manual_client_external_id="client-good",
+                review_status="approved",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="6",
+                site_id="site-unmapped-client",
+                site_name_or_label="Unmapped Client Site",
+                manual_client_external_id="client-unmapped",
+                review_status="approved",
+            ),
+        ],
+        client_status_rows=[
+            _review_row(
+                CLIENT_STATUS_REVIEW_COLUMNS,
+                source_row_number="4",
+                client_id="client-unmapped",
+                client_name_or_label="Beta LLC",
+                raw_client_status="Needs Review",
+                suggested_status="prospect",
+                review_status="approved",
+            ),
+        ],
+    )
+
+    summary = _prepare_reviewed_sample(tmp_path, exports, review_dir)
+
+    assert summary.clients_written == 2
+    assert summary.sites_written == 2
+    assert summary.validation_ready is True
+    assert summary.validation_json_path.exists()
+    assert summary.validation_md_path.exists()
+    clients = _read_csv(summary.clients_path)
+    sites = _read_csv(summary.sites_path)
+    assert {row["client_external_id"]: row["status"] for row in clients} == {
+        "client-good": "active",
+        "client-unmapped": "prospect",
+    }
+    assert {row["site_external_id"]: row["client_external_id"] for row in sites} == {
+        "site-no-client": "client-good",
+        "site-unmapped-client": "client-unmapped",
+    }
+
+    validation = validate_import_templates(clients=summary.clients_path, sites=summary.sites_path)
+    assert validation["ready"] is True
+
+
+def test_prepare_reviewed_sample_skips_blank_review_status_rows(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                manual_client_external_id="client-good",
+                review_status="approved",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="6",
+                site_id="site-unmapped-client",
+                site_name_or_label="Unmapped Client Site",
+                manual_client_external_id="client-good",
+                review_status="",
+            ),
+        ],
+    )
+
+    summary = _prepare_reviewed_sample(tmp_path, exports, review_dir)
+    sites = _read_csv(summary.sites_path)
+
+    assert summary.sites_written == 1
+    assert [row["site_external_id"] for row in sites] == ["site-no-client"]
+
+
+def test_prepare_reviewed_sample_skips_needs_followup_rows(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                manual_client_external_id="client-good",
+                review_status="approved",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="6",
+                site_id="site-unmapped-client",
+                site_name_or_label="Unmapped Client Site",
+                manual_client_external_id="client-good",
+                review_status="needs_followup",
+            ),
+        ],
+    )
+
+    summary = _prepare_reviewed_sample(tmp_path, exports, review_dir)
+    sites = _read_csv(summary.sites_path)
+
+    assert summary.sites_written == 1
+    assert [row["site_external_id"] for row in sites] == ["site-no-client"]
+
+
+def test_prepare_reviewed_sample_fails_when_approved_site_lacks_manual_client(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                review_status="approved",
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="manual_client_external_id"):
+        _prepare_reviewed_sample(tmp_path, exports, review_dir)
+
+
+def test_prepare_reviewed_sample_honors_duplicate_keep_skip_decisions(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="9",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site A",
+                manual_client_external_id="client-good",
+                review_status="approved",
+            ),
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="10",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site B",
+                manual_client_external_id="client-good",
+                review_status="approved",
+            ),
+        ],
+        duplicate_rows=[
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="9",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site A",
+                duplicate_group="site_id:site-dup",
+                keep_or_skip="keep",
+            ),
+            _review_row(
+                DUPLICATE_SITES_REVIEW_COLUMNS,
+                source_row_number="10",
+                site_id="site-dup",
+                site_name_or_label="Duplicate Site B",
+                duplicate_group="site_id:site-dup",
+                keep_or_skip="skip",
+            ),
+        ],
+    )
+
+    summary = _prepare_reviewed_sample(tmp_path, exports, review_dir)
+    sites = _read_csv(summary.sites_path)
+
+    assert summary.sites_written == 1
+    assert summary.kept_duplicate_sites == 1
+    assert sites[0]["site_external_id"] == "site-dup"
+    assert sites[0]["canonical_name"] == "Duplicate Site A"
+    assert summary.validation_ready is True
+
+
+def test_prepare_reviewed_sample_refuses_unknown_status_until_manually_mapped(tmp_path: Path) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        status_default_rows=[
+            _review_row(
+                STATUS_DEFAULTS_REVIEW_COLUMNS,
+                source_row_number="3",
+                site_id="site-good",
+                site_name_or_label="Good Site",
+                raw_site_status="Needs Field Review",
+                defaulted_status="active",
+                review_status="approved",
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="manual_status"):
+        _prepare_reviewed_sample(tmp_path, exports, review_dir)
+
+    review_dir = _write_review_pack(
+        tmp_path / "reviews-ready",
+        status_default_rows=[
+            _review_row(
+                STATUS_DEFAULTS_REVIEW_COLUMNS,
+                source_row_number="3",
+                site_id="site-good",
+                site_name_or_label="Good Site",
+                raw_site_status="Needs Field Review",
+                defaulted_status="active",
+                manual_status="active",
+                review_status="approved",
+            ),
+        ],
+    )
+
+    summary = _prepare_reviewed_sample(tmp_path, exports, review_dir)
+    sites = _read_csv(summary.sites_path)
+
+    assert summary.sites_written == 1
+    assert sites[0]["site_external_id"] == "site-good"
+    assert sites[0]["status"] == "active"
+    assert summary.validation_ready is True
+
+
+def test_prepare_reviewed_sample_does_not_open_db_or_network(tmp_path: Path, monkeypatch) -> None:
+    exports = _fake_review_exports(tmp_path)
+    review_dir = _write_review_pack(
+        tmp_path / "reviews",
+        unresolved_rows=[
+            _review_row(
+                UNRESOLVED_SITES_REVIEW_COLUMNS,
+                source_row_number="5",
+                site_id="site-no-client",
+                site_name_or_label="No Client Site",
+                manual_client_external_id="client-good",
+                review_status="approved",
+            ),
+        ],
+    )
+
+    def fail_sqlite_connect(*_args, **_kwargs):
+        raise AssertionError("reviewed mapping application must not open a database")
+
+    def fail_socket_connect(*_args, **_kwargs):
+        raise AssertionError("reviewed mapping application must not open a network connection")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_sqlite_connect)
+    monkeypatch.setattr(socket, "create_connection", fail_socket_connect)
+
+    summary = _prepare_reviewed_sample(tmp_path, exports, review_dir)
+
+    assert summary.validation_ready is True
+    assert list(tmp_path.rglob("*.db")) == []
 
 
 def test_generate_review_pack_does_not_open_db_or_network(tmp_path: Path, monkeypatch) -> None:

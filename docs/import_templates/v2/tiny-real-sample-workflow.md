@@ -208,7 +208,73 @@ Do not proceed to import until:
 
 After Bryce completes the review, generate a larger private validation sample using only reviewed mappings. Do not import yet.
 
-## 11. How to read validator results
+## 11. How to apply Bryce-reviewed mappings
+
+The reviewed mapping applier reads only the private review CSVs and private Monday exports, then writes a new private Clients/Sites validation sample. It still does not import data, write the database, run migrations, run the V1 apply path, or call Outlook, Gmail, Google Drive, or OpenAI.
+
+Accepted `review_status` values:
+
+- `approved`: Bryce reviewed the row and the required manual fields are ready to apply.
+- `skip`: intentionally exclude this row from the reviewed sample.
+- `needs_source_fix`: exclude this row until Monday/source data is corrected and the review pack is regenerated.
+- `needs_followup`: exclude this row until Bryce resolves the open question.
+- blank: treated as not approved and skipped.
+
+Blank `review_status` is never treated as approval.
+
+Bryce should fill the review CSVs this way:
+
+- `unresolved_sites_review.csv`: use `review_status=approved` only when the site should be sampled and `manual_client_external_id` is filled with the reviewed V2 client external ID. If the raw site status is blank or unknown, also fill `manual_status`.
+- `client_status_review.csv`: use `review_status=approved` only when `suggested_status` is filled with `active`, `inactive`, `prospect`, or `archived`.
+- `status_defaults_review.csv`: use `review_status=approved` only when `manual_status` is filled with `active`, `inactive`, `on_hold`, or `archived`.
+- `duplicate_sites_review.csv`: fill `keep_or_skip` with `keep`, `skip`, or `needs_source_fix`. Use at most one `keep` per duplicate group. A kept duplicate row must also have an approved row in `unresolved_sites_review.csv`.
+
+Generate the reviewed private sample from the repo root:
+
+```powershell
+.\apps\api\.venv\Scripts\python apps\api\scripts\prepare_monday_tiny_sample.py `
+  --apply-reviewed-mappings `
+  --review-pack-dir "import_validation_reports\monday_review_pack" `
+  --output-clients "docs\import_templates\v2\private\clients_reviewed_sample.csv" `
+  --output-sites "docs\import_templates\v2\private\sites_reviewed_sample.csv"
+```
+
+Optional caps for a smaller reviewed pass:
+
+```powershell
+  --max-clients 25 `
+  --max-sites 75
+```
+
+The applier automatically validates the generated reviewed sample and writes private reports under:
+
+```text
+import_validation_reports/reviewed_sample/
+```
+
+Reviewed sample stop conditions:
+
+- Any required review CSV is missing.
+- Any required review column is missing.
+- An approved unresolved site lacks `manual_client_external_id`.
+- An approved unknown/defaulted site status lacks `manual_status`.
+- An approved client status lacks `suggested_status`.
+- A duplicate row lacks a clear `keep`, `skip`, or `needs_source_fix` decision.
+- A duplicate group has more than one `keep`.
+- A kept duplicate row lacks a matching approved unresolved-site review row.
+- A reviewed site references a client that cannot be written to the output Clients CSV.
+- The reviewed output would contain zero clients or zero sites.
+- The generated reviewed sample fails template validation.
+
+If the console says `READY`, the reviewed Clients/Sites CSVs are internally valid for continued validation work only. If it says `NOT READY`, fix the review CSVs or source exports and rerun the applier. In both cases, this is still not an import.
+
+Do not commit:
+
+- `docs/import_templates/v2/private/clients_reviewed_sample.csv`
+- `docs/import_templates/v2/private/sites_reviewed_sample.csv`
+- anything under `import_validation_reports/reviewed_sample/`
+
+## 12. How to read validator results
 
 Start with the console summary:
 
@@ -222,7 +288,7 @@ Start with the console summary:
 
 Open the Markdown report for exact row numbers and field-level messages.
 
-## 12. Stop conditions
+## 13. Stop conditions
 
 Stop and fix the private CSVs when any of these appear:
 
@@ -239,7 +305,7 @@ Stop and fix the private CSVs when any of these appear:
 
 No orphan Sites. No weak Client mapping. No blind import.
 
-## 13. What files must never be committed
+## 14. What files must never be committed
 
 Never commit:
 
@@ -258,7 +324,7 @@ Never commit:
 
 The committed templates are safe. Private copies and reports are not.
 
-## 14. Next step after clean validation
+## 15. Next step after clean validation
 
 After a clean tiny validation:
 

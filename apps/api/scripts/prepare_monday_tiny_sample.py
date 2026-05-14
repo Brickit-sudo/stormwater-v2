@@ -6,7 +6,7 @@ import hashlib
 import re
 import sys
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -89,6 +89,13 @@ STATUS_DEFAULTS_REVIEW_COLUMNS = (
     "notes",
 )
 
+APPROVED_REVIEW_STATUS = "approved"
+SKIPPED_REVIEW_STATUSES = {"", "skip", "needs_source_fix", "needs_followup"}
+KNOWN_REVIEW_STATUSES = SKIPPED_REVIEW_STATUSES | {APPROVED_REVIEW_STATUS}
+CLIENT_STATUS_VALUES = {"active", "inactive", "prospect", "archived"}
+SITE_STATUS_VALUES = {"active", "inactive", "on_hold", "archived"}
+DUPLICATE_DECISIONS = {"keep", "skip", "needs_source_fix"}
+
 SITE_REVIEW_BUCKET_LABELS = {
     "site_id_not_found_in_leads": "Site IDs not found in Leads",
     "site_has_no_client_id": "sites with no Client ID",
@@ -155,6 +162,24 @@ class ReviewPackSummary:
     duplicate_site_rows: int
     status_default_rows: int
     readme_path: Path
+
+
+@dataclass(frozen=True)
+class ReviewedSampleSummary:
+    clients_written: int
+    sites_written: int
+    approved_unresolved_sites: int
+    approved_status_defaults: int
+    kept_duplicate_sites: int
+    skipped_review_rows: dict[str, int]
+    clients_path: Path
+    sites_path: Path
+    report_dir: Path
+    application_report_path: Path
+    validation_json_path: Path
+    validation_md_path: Path
+    validation_ready: bool
+    validation_totals: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -1020,6 +1045,676 @@ def prepare_tiny_sample(
     )
 
 
+class ReviewedMappingError(ValueError):
+    """Raised when reviewed mapping CSVs are incomplete or unsafe to apply."""
+
+
+def _normalized_review_value(value: Any) -> str:
+    return re.sub(r"[\s-]+", "_", clean(value).casefold()).strip("_")
+
+
+def _review_status(row: dict[str, str]) -> str:
+    return _normalized_review_value(row.get("review_status"))
+
+
+def _review_csv_row(row: dict[str, str]) -> str:
+    return clean(row.get("__csv_rownum__")) or "unknown"
+
+
+def _read_review_csv(path: Path, required_columns: Sequence[str], label: str) -> list[dict[str, str]]:
+    if not path.exists():
+        raise ReviewedMappingError(f"Missing required review CSV: {path}")
+    if not path.is_file():
+        raise ReviewedMappingError(f"Review CSV path is not a file: {path}")
+
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        reader = csv.DictReader(file)
+        fieldnames = tuple(reader.fieldnames or ())
+        missing = [column for column in required_columns if column not in fieldnames]
+        if missing:
+            raise ReviewedMappingError(
+                f"{label} is missing required review column(s): {', '.join(missing)}",
+            )
+        rows = []
+        for row_number, row in enumerate(reader, start=2):
+            rows.append(
+                {
+                    key: clean(value)
+                    for key, value in row.items()
+                    if key is not None
+                }
+                | {"__csv_rownum__": str(row_number)}
+            )
+    return rows
+
+
+def _ensure_known_review_status(row: dict[str, str], label: str) -> str:
+    status = _review_status(row)
+    if status not in KNOWN_REVIEW_STATUSES:
+        raise ReviewedMappingError(
+            f"{label} row {_review_csv_row(row)} has unsupported review_status `{clean(row.get('review_status'))}`.",
+        )
+    return status
+
+
+def _review_file_paths(review_pack_dir: Path) -> dict[str, Path]:
+    return {
+        "unresolved_sites": review_pack_dir / "unresolved_sites_review.csv",
+        "client_status": review_pack_dir / "client_status_review.csv",
+        "duplicate_sites": review_pack_dir / "duplicate_sites_review.csv",
+        "status_defaults": review_pack_dir / "status_defaults_review.csv",
+    }
+
+
+def _site_rows_by_source(tables: dict[str, TableData]) -> dict[str, dict[str, str]]:
+    rows_by_source: dict[str, dict[str, str]] = {}
+    for row in tables["sites"].rows:
+        source_row = _source_row_number(row)
+        if source_row:
+            rows_by_source[source_row] = row
+    return rows_by_source
+
+
+def _client_candidate_from_reviewed_status(
+    analysis: MondayAnalysis,
+    *,
+    client_id: str,
+    status: str,
+) -> dict[str, str]:
+    contact_rows = analysis.client_contact_rows.get(client_id, [])
+    if not contact_rows:
+        raise ReviewedMappingError(
+            "An approved client status row references a Client ID that is not present in Contacts.",
+        )
+
+    normalized_accounts = {name for name in analysis.client_account_names.get(client_id, set()) if name}
+    if len(normalized_accounts) != 1:
+        raise ReviewedMappingError(
+            "An approved client status row cannot build a client because the Contacts Account is blank or ambiguous.",
+        )
+
+    chosen = contact_rows[0]
+    account = clean(chosen.get("Account"))
+    if not account:
+        raise ReviewedMappingError(
+            "An approved client status row cannot build a client because the Contacts Account is blank.",
+        )
+    email = clean(chosen.get("Email"))
+    if email and not _valid_email(email):
+        email = ""
+    contact_name = (
+        " ".join(part for part in [clean(chosen.get("First Name")), clean(chosen.get("Last Name"))] if part)
+        or clean(chosen.get("Name"))
+    )
+    return {
+        "account": account,
+        "status": status,
+        "primary_contact_name": contact_name,
+        "email": email,
+        "phone": clean(chosen.get("Phone")),
+        "source_row": clean(chosen.get("__rownum__")),
+    }
+
+
+def _build_reviewed_client_candidates(
+    analysis: MondayAnalysis,
+    client_status_rows: Sequence[dict[str, str]],
+    skipped_review_rows: Counter[str],
+) -> dict[str, dict[str, str]]:
+    candidates = dict(analysis.client_candidates)
+    approved_statuses: dict[str, str] = {}
+    for row in client_status_rows:
+        status = _ensure_known_review_status(row, "client_status_review.csv")
+        if status != APPROVED_REVIEW_STATUS:
+            skipped_review_rows[f"client_status:{status or 'blank'}"] += 1
+            continue
+
+        client_id = clean(row.get("client_id"))
+        suggested_status = _normalized_review_value(row.get("suggested_status"))
+        if not client_id:
+            raise ReviewedMappingError(
+                f"client_status_review.csv row {_review_csv_row(row)} is approved but lacks client_id.",
+            )
+        if not suggested_status:
+            raise ReviewedMappingError(
+                f"client_status_review.csv row {_review_csv_row(row)} is approved but lacks suggested_status.",
+            )
+        if suggested_status not in CLIENT_STATUS_VALUES:
+            raise ReviewedMappingError(
+                f"client_status_review.csv row {_review_csv_row(row)} has invalid suggested_status `{suggested_status}`.",
+            )
+        existing = approved_statuses.get(client_id)
+        if existing and existing != suggested_status:
+            raise ReviewedMappingError(
+                "client_status_review.csv has conflicting approved statuses for the same Client ID.",
+            )
+        approved_statuses[client_id] = suggested_status
+
+    for client_id, status in approved_statuses.items():
+        candidates[client_id] = _client_candidate_from_reviewed_status(
+            analysis,
+            client_id=client_id,
+            status=status,
+        )
+    return candidates
+
+
+def _approved_unresolved_site_rows(
+    unresolved_rows: Sequence[dict[str, str]],
+    skipped_review_rows: Counter[str],
+) -> dict[str, dict[str, str]]:
+    approved: dict[str, dict[str, str]] = {}
+    for row in unresolved_rows:
+        status = _ensure_known_review_status(row, "unresolved_sites_review.csv")
+        if status != APPROVED_REVIEW_STATUS:
+            skipped_review_rows[f"unresolved_sites:{status or 'blank'}"] += 1
+            continue
+
+        source_row = clean(row.get("source_row_number"))
+        manual_client = clean(row.get("manual_client_external_id"))
+        if not source_row:
+            raise ReviewedMappingError(
+                f"unresolved_sites_review.csv row {_review_csv_row(row)} is approved but lacks source_row_number.",
+            )
+        if not manual_client:
+            raise ReviewedMappingError(
+                f"unresolved_sites_review.csv row {_review_csv_row(row)} is approved but lacks manual_client_external_id.",
+            )
+        if source_row in approved:
+            raise ReviewedMappingError(
+                "unresolved_sites_review.csv has multiple approved rows for the same source_row_number.",
+            )
+        approved[source_row] = row
+    return approved
+
+
+def _approved_status_default_rows(
+    status_default_rows: Sequence[dict[str, str]],
+    skipped_review_rows: Counter[str],
+) -> dict[str, str]:
+    approved: dict[str, str] = {}
+    for row in status_default_rows:
+        status = _ensure_known_review_status(row, "status_defaults_review.csv")
+        if status != APPROVED_REVIEW_STATUS:
+            skipped_review_rows[f"status_defaults:{status or 'blank'}"] += 1
+            continue
+
+        source_row = clean(row.get("source_row_number"))
+        manual_status = _normalized_review_value(row.get("manual_status"))
+        if not source_row:
+            raise ReviewedMappingError(
+                f"status_defaults_review.csv row {_review_csv_row(row)} is approved but lacks source_row_number.",
+            )
+        if not manual_status:
+            raise ReviewedMappingError(
+                f"status_defaults_review.csv row {_review_csv_row(row)} is approved but lacks manual_status.",
+            )
+        if manual_status not in SITE_STATUS_VALUES:
+            raise ReviewedMappingError(
+                f"status_defaults_review.csv row {_review_csv_row(row)} has invalid manual_status `{manual_status}`.",
+            )
+        if source_row in approved and approved[source_row] != manual_status:
+            raise ReviewedMappingError(
+                "status_defaults_review.csv has conflicting approved statuses for the same source_row_number.",
+            )
+        approved[source_row] = manual_status
+    return approved
+
+
+def _duplicate_decision_rows(
+    duplicate_rows: Sequence[dict[str, str]],
+    skipped_review_rows: Counter[str],
+) -> dict[str, str]:
+    decisions: dict[str, str] = {}
+    grouped: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for row in duplicate_rows:
+        source_row = clean(row.get("source_row_number"))
+        decision = _normalized_review_value(row.get("keep_or_skip"))
+        if not source_row:
+            raise ReviewedMappingError(
+                f"duplicate_sites_review.csv row {_review_csv_row(row)} lacks source_row_number.",
+            )
+        if decision not in DUPLICATE_DECISIONS:
+            raise ReviewedMappingError(
+                f"duplicate_sites_review.csv row {_review_csv_row(row)} has no clear keep/skip/needs_source_fix decision.",
+            )
+        if source_row in decisions:
+            raise ReviewedMappingError(
+                "duplicate_sites_review.csv has multiple decisions for the same source_row_number.",
+            )
+        decisions[source_row] = decision
+        grouped[clean(row.get("duplicate_group"))].append((source_row, decision))
+        if decision != "keep":
+            skipped_review_rows[f"duplicate_sites:{decision}"] += 1
+
+    for duplicate_group, group_decisions in grouped.items():
+        keep_rows = [source_row for source_row, decision in group_decisions if decision == "keep"]
+        if len(keep_rows) > 1:
+            raise ReviewedMappingError(
+                f"duplicate_sites_review.csv group `{duplicate_group}` has more than one keep decision.",
+            )
+    return decisions
+
+
+def _reviewed_manual_site_status(
+    *,
+    site_row: dict[str, str],
+    unresolved_review_row: dict[str, str] | None,
+    approved_status_defaults: dict[str, str],
+) -> tuple[str, bool]:
+    source_row = _source_row_number(site_row)
+    manual_status = ""
+    if unresolved_review_row is not None:
+        manual_status = _normalized_review_value(unresolved_review_row.get("manual_status"))
+    if not manual_status:
+        manual_status = approved_status_defaults.get(source_row, "")
+    if manual_status:
+        if manual_status not in SITE_STATUS_VALUES:
+            raise ReviewedMappingError(
+                f"Approved site source row {source_row} has invalid manual_status `{manual_status}`.",
+            )
+        return manual_status, True
+
+    mapped_status, defaulted = _map_site_status(site_row.get("Status", ""))
+    if defaulted:
+        raise ReviewedMappingError(
+            f"Approved site source row {source_row} still has an unknown site status after review.",
+        )
+    return mapped_status, False
+
+
+def _client_output_row(
+    *,
+    client_id: str,
+    client: dict[str, str],
+    client_headers: Sequence[str],
+    sample_label: str,
+) -> dict[str, str]:
+    row = {header: "" for header in client_headers}
+    row.update(
+        {
+            "source_system": "monday",
+            "legacy_source": "monday_contacts",
+            "legacy_id": client_id,
+            "client_external_id": client_id,
+            "canonical_name": client["account"],
+            "status": client["status"],
+            "primary_contact_name": client["primary_contact_name"],
+            "email": client["email"],
+            "phone": client["phone"],
+            "notes": (
+                f"{sample_label.title()} validation sample only. "
+                f"Client account sourced from Contacts row {client['source_row']} after reviewed mapping."
+            ),
+        },
+    )
+    return row
+
+
+def _site_output_row(
+    *,
+    site_id: str,
+    client_id: str,
+    site: dict[str, str],
+    site_status: str,
+    status_was_manual: bool,
+    site_headers: Sequence[str],
+    sample_label: str,
+) -> tuple[dict[str, str], bool]:
+    drive_url = clean(site.get("Gdrive"))
+    site_url_omitted = False
+    if drive_url and not _valid_url(drive_url):
+        drive_url = ""
+        site_url_omitted = True
+    notes = (
+        f"{sample_label.title()} validation sample only. "
+        "Client link and status are from reviewed Monday mapping decisions. "
+        f"Site Information row {clean(site.get('__rownum__'))}. "
+    )
+    if status_was_manual:
+        notes += f"Status manually reviewed as {site_status}."
+    else:
+        notes += f"Status mapped from Monday Status to {site_status}."
+    if site_url_omitted:
+        notes += " Source Gdrive value omitted because it was not an http(s) URL."
+
+    row = {header: "" for header in site_headers}
+    row.update(
+        {
+            "source_system": "monday",
+            "legacy_source": "monday_site_information",
+            "legacy_id": site_id,
+            "site_external_id": site_id,
+            "client_external_id": client_id,
+            "canonical_name": clean(site.get("Name")),
+            "site_code": site_id,
+            "status": site_status,
+            "address": clean(site.get("Address")),
+            "city": _first_nonempty(site.get("CITY"), site.get("City")),
+            "state": _first_nonempty(site.get("STATE"), site.get("State")),
+            "zip": _first_nonempty(site.get("ZIP"), site.get("Zip")),
+            "drive_folder_url": drive_url,
+            "notes": notes,
+        },
+    )
+    return row, site_url_omitted
+
+
+def _run_reviewed_sample_validation(
+    *,
+    clients_path: Path,
+    sites_path: Path,
+    report_dir: Path,
+) -> tuple[dict[str, Any], Path, Path]:
+    try:
+        from scripts.validate_import_templates import validate_import_templates, write_report_outputs
+    except ModuleNotFoundError:
+        api_root = Path(__file__).resolve().parents[1]
+        if str(api_root) not in sys.path:
+            sys.path.insert(0, str(api_root))
+        from scripts.validate_import_templates import validate_import_templates, write_report_outputs
+
+    report = validate_import_templates(clients=clients_path, sites=sites_path)
+    output_json = report_dir / "reviewed_sample_validation.json"
+    output_md = report_dir / "reviewed_sample_validation.md"
+    write_report_outputs(report, output_json=output_json, output_md=output_md)
+    return report, output_json, output_md
+
+
+def _render_reviewed_sample_report(
+    *,
+    output_dir: Path,
+    clients_path: Path,
+    sites_path: Path,
+    clients_written: int,
+    sites_written: int,
+    approved_unresolved_sites: int,
+    approved_status_defaults: int,
+    kept_duplicate_sites: int,
+    skipped_review_rows: Counter[str],
+    site_urls_omitted: int,
+    validation: Mapping[str, Any],
+) -> str:
+    validation_totals = validation.get("totals", {})
+    return "\n".join(
+        [
+            "# Reviewed Monday Mapping Application Report",
+            "",
+            f"- Generated at: `{datetime.now(timezone.utc).isoformat()}`",
+            f"- Output folder: `{output_dir}`",
+            "- Purpose: private reviewed Clients/Sites validation sample generation only.",
+            "- Safety: no database writes, no provider calls, no V1 migration apply, and no real import.",
+            "",
+            "## Outputs",
+            *_markdown_table(
+                ["Output", "Path", "Rows"],
+                [
+                    ("clients", clients_path, clients_written),
+                    ("sites", sites_path, sites_written),
+                ],
+            ),
+            "",
+            "## Reviewed Rows Applied",
+            *_markdown_table(
+                ["Source", "Rows"],
+                [
+                    ("approved unresolved site mappings", approved_unresolved_sites),
+                    ("approved status default mappings", approved_status_defaults),
+                    ("duplicate rows kept", kept_duplicate_sites),
+                    ("non-http(s) site URLs omitted", site_urls_omitted),
+                ],
+            ),
+            "",
+            "## Rows Skipped By Review Decision",
+            *_markdown_table(["Decision", "Rows"], sorted(skipped_review_rows.items())),
+            "",
+            "## Validation Summary",
+            f"- Ready: {'YES' if validation.get('ready') else 'NO'}",
+            f"- Total rows: {validation_totals.get('total_rows', 0)}",
+            f"- Valid rows: {validation_totals.get('valid_rows', 0)}",
+            f"- Invalid rows: {validation_totals.get('invalid_rows', 0)}",
+            f"- Duplicate rows: {validation_totals.get('duplicate_rows', 0)}",
+            f"- Unresolved references: {validation_totals.get('unresolved_references', 0)}",
+            "",
+            "## Stop Conditions",
+            *([f"- {condition}" for condition in validation.get("stop_conditions", [])] or ["- None"]),
+            "",
+            "## Safety",
+            "- Validation sample only.",
+            "- No Clients, Sites, Jobs, Documents, Emails, or database records were written.",
+            "- Review outputs may contain private paths and must remain ignored.",
+            "",
+        ],
+    )
+
+
+def prepare_reviewed_sample(
+    *,
+    contacts_path: Path,
+    leads_path: Path,
+    sites_path: Path,
+    orders_path: Path,
+    clients_template_path: Path,
+    sites_template_path: Path,
+    review_pack_dir: Path,
+    clients_output_path: Path,
+    sites_output_path: Path,
+    report_dir: Path,
+    max_clients: int | None = None,
+    max_sites: int | None = None,
+) -> ReviewedSampleSummary:
+    if max_clients is not None and max_clients < 1:
+        raise ReviewedMappingError("max_clients must be at least 1 when provided.")
+    if max_sites is not None and max_sites < 1:
+        raise ReviewedMappingError("max_sites must be at least 1 when provided.")
+
+    tables = {
+        "contacts": read_table(contacts_path),
+        "leads": read_table(leads_path),
+        "orders": read_table(orders_path),
+        "sites": read_table(sites_path),
+    }
+    analysis = _analyze_monday_exports(tables)
+
+    review_paths = _review_file_paths(review_pack_dir)
+    unresolved_rows = _read_review_csv(
+        review_paths["unresolved_sites"],
+        UNRESOLVED_SITES_REVIEW_COLUMNS,
+        "unresolved_sites_review.csv",
+    )
+    client_status_rows = _read_review_csv(
+        review_paths["client_status"],
+        CLIENT_STATUS_REVIEW_COLUMNS,
+        "client_status_review.csv",
+    )
+    duplicate_rows = _read_review_csv(
+        review_paths["duplicate_sites"],
+        DUPLICATE_SITES_REVIEW_COLUMNS,
+        "duplicate_sites_review.csv",
+    )
+    status_default_rows = _read_review_csv(
+        review_paths["status_defaults"],
+        STATUS_DEFAULTS_REVIEW_COLUMNS,
+        "status_defaults_review.csv",
+    )
+
+    skipped_review_rows: Counter[str] = Counter()
+    reviewed_client_candidates = _build_reviewed_client_candidates(
+        analysis,
+        client_status_rows,
+        skipped_review_rows,
+    )
+    approved_unresolved = _approved_unresolved_site_rows(unresolved_rows, skipped_review_rows)
+    approved_status_defaults = _approved_status_default_rows(status_default_rows, skipped_review_rows)
+    duplicate_decisions = _duplicate_decision_rows(duplicate_rows, skipped_review_rows)
+    for source_row, decision in duplicate_decisions.items():
+        if decision == "keep" and source_row not in approved_unresolved:
+            raise ReviewedMappingError(
+                "duplicate_sites_review.csv has a keep decision without an approved unresolved site mapping row.",
+            )
+
+    rows_by_source = _site_rows_by_source(tables)
+    reviewed_sites: list[tuple[str, str, dict[str, str], str, bool]] = []
+    included_sources: set[str] = set()
+    kept_duplicate_sites = 0
+
+    for source_row, review_row in approved_unresolved.items():
+        duplicate_decision = duplicate_decisions.get(source_row)
+        if duplicate_decision and duplicate_decision != "keep":
+            skipped_review_rows[f"approved_unresolved_blocked_by_duplicate:{duplicate_decision}"] += 1
+            continue
+        site_row = rows_by_source.get(source_row)
+        if site_row is None:
+            raise ReviewedMappingError(
+                f"Approved unresolved site source row {source_row} was not found in the Site Information export.",
+            )
+        site_id = clean(site_row.get("Site ID"))
+        if not site_id:
+            raise ReviewedMappingError(
+                f"Approved unresolved site source row {source_row} cannot be sampled because Site ID is blank.",
+            )
+        if not clean(site_row.get("Name")):
+            raise ReviewedMappingError(
+                f"Approved unresolved site source row {source_row} cannot be sampled because site name is blank.",
+            )
+        client_id = clean(review_row.get("manual_client_external_id"))
+        site_status, status_was_manual = _reviewed_manual_site_status(
+            site_row=site_row,
+            unresolved_review_row=review_row,
+            approved_status_defaults=approved_status_defaults,
+        )
+        reviewed_sites.append((site_id, client_id, site_row, site_status, status_was_manual))
+        included_sources.add(source_row)
+        if duplicate_decision == "keep":
+            kept_duplicate_sites += 1
+
+    for source_row, manual_status in approved_status_defaults.items():
+        if source_row in included_sources:
+            continue
+        if source_row in duplicate_decisions and duplicate_decisions[source_row] != "keep":
+            skipped_review_rows[f"approved_status_blocked_by_duplicate:{duplicate_decisions[source_row]}"] += 1
+            continue
+        site_row = rows_by_source.get(source_row)
+        if site_row is None:
+            raise ReviewedMappingError(
+                f"Approved status default source row {source_row} was not found in the Site Information export.",
+            )
+        site_id = clean(site_row.get("Site ID"))
+        if not site_id:
+            raise ReviewedMappingError(
+                f"Approved status default source row {source_row} cannot be sampled because Site ID is blank.",
+            )
+        if not clean(site_row.get("Name")):
+            raise ReviewedMappingError(
+                f"Approved status default source row {source_row} cannot be sampled because site name is blank.",
+            )
+        linked_clients = analysis.site_to_client_ids.get(site_id, set())
+        if len(linked_clients) != 1:
+            raise ReviewedMappingError(
+                f"Approved status default source row {source_row} does not have one clear Leads client link.",
+            )
+        client_id = next(iter(linked_clients))
+        reviewed_sites.append((site_id, client_id, site_row, manual_status, True))
+        included_sources.add(source_row)
+
+    if max_clients is not None or max_sites is not None:
+        selected_clients, selected_site_base = _select_sample_sites(
+            [(site_id, client_id, site_row) for site_id, client_id, site_row, _status, _manual in reviewed_sites],
+            max_clients=max_clients or len({client_id for _site_id, client_id, _site_row, _status, _manual in reviewed_sites}),
+            max_sites=max_sites or len(reviewed_sites),
+        )
+        selected_source_rows = {_source_row_number(site_row) for _site_id, _client_id, site_row in selected_site_base}
+        reviewed_sites = [
+            site
+            for site in reviewed_sites
+            if _source_row_number(site[2]) in selected_source_rows and site[1] in set(selected_clients)
+        ][: max_sites or len(reviewed_sites)]
+
+    if not reviewed_sites:
+        raise ReviewedMappingError("Reviewed sample would contain zero sites.")
+
+    selected_client_ids = list(dict.fromkeys(client_id for _site_id, client_id, _site_row, _status, _manual in reviewed_sites))
+    missing_clients = [client_id for client_id in selected_client_ids if client_id not in reviewed_client_candidates]
+    if missing_clients:
+        raise ReviewedMappingError(
+            "Approved site references a client that is not present in output clients. "
+            "Review the manual_client_external_id and client status mappings.",
+        )
+    if not selected_client_ids:
+        raise ReviewedMappingError("Reviewed sample would contain zero clients.")
+
+    client_headers = _read_template_headers(clients_template_path)
+    site_headers = _read_template_headers(sites_template_path)
+    client_rows_out = [
+        _client_output_row(
+            client_id=client_id,
+            client=reviewed_client_candidates[client_id],
+            client_headers=client_headers,
+            sample_label="reviewed",
+        )
+        for client_id in selected_client_ids
+    ]
+    site_rows_out = []
+    site_urls_omitted = 0
+    for site_id, client_id, site_row, site_status, status_was_manual in reviewed_sites:
+        row, url_omitted = _site_output_row(
+            site_id=site_id,
+            client_id=client_id,
+            site=site_row,
+            site_status=site_status,
+            status_was_manual=status_was_manual,
+            site_headers=site_headers,
+            sample_label="reviewed",
+        )
+        site_rows_out.append(row)
+        if url_omitted:
+            site_urls_omitted += 1
+
+    _write_csv(clients_output_path, client_headers, client_rows_out)
+    _write_csv(sites_output_path, site_headers, site_rows_out)
+
+    report_dir.mkdir(parents=True, exist_ok=True)
+    validation, validation_json_path, validation_md_path = _run_reviewed_sample_validation(
+        clients_path=clients_output_path,
+        sites_path=sites_output_path,
+        report_dir=report_dir,
+    )
+    application_report_path = report_dir / "reviewed_mapping_application.md"
+    application_report_path.write_text(
+        _render_reviewed_sample_report(
+            output_dir=report_dir,
+            clients_path=clients_output_path,
+            sites_path=sites_output_path,
+            clients_written=len(client_rows_out),
+            sites_written=len(site_rows_out),
+            approved_unresolved_sites=len(approved_unresolved),
+            approved_status_defaults=len(approved_status_defaults),
+            kept_duplicate_sites=kept_duplicate_sites,
+            skipped_review_rows=skipped_review_rows,
+            site_urls_omitted=site_urls_omitted,
+            validation=validation,
+        ),
+        encoding="utf-8",
+    )
+
+    return ReviewedSampleSummary(
+        clients_written=len(client_rows_out),
+        sites_written=len(site_rows_out),
+        approved_unresolved_sites=len(approved_unresolved),
+        approved_status_defaults=len(approved_status_defaults),
+        kept_duplicate_sites=kept_duplicate_sites,
+        skipped_review_rows=dict(skipped_review_rows),
+        clients_path=clients_output_path,
+        sites_path=sites_output_path,
+        report_dir=report_dir,
+        application_report_path=application_report_path,
+        validation_json_path=validation_json_path,
+        validation_md_path=validation_md_path,
+        validation_ready=bool(validation.get("ready")),
+        validation_totals=dict(validation.get("totals", {})),
+    )
+
+
 def _limit_review_rows(
     rows: Sequence[dict[str, str]],
     max_review_rows: int | None,
@@ -1103,8 +1798,8 @@ def _review_pack_readme(
         "## What Bryce Must Review",
         "- In `unresolved_sites_review.csv`, resolve each site by filling `manual_client_external_id`, marking `review_status`, or noting why it should be skipped.",
         "- In `client_status_review.csv`, fill `suggested_status` with one of `active`, `inactive`, `prospect`, or `archived`, then mark `review_status`.",
-        "- In `duplicate_sites_review.csv`, choose one row to keep for each duplicate group and mark the others `skip` or `merge`.",
-        "- In `status_defaults_review.csv`, confirm whether the defaulted `active` status is correct or fill `manual_status` with the reviewed V2 site status.",
+        "- In `duplicate_sites_review.csv`, choose at most one row to `keep` for each duplicate group and mark the others `skip` or `needs_source_fix`.",
+        "- In `status_defaults_review.csv`, fill `manual_status` with the reviewed V2 site status before marking the row approved.",
         "",
         "## Suggested Review Status Values",
         "- `approved`: Bryce reviewed the row and the manual fields are ready to apply.",
@@ -1115,8 +1810,8 @@ def _review_pack_readme(
         "## Stop Conditions",
         "- Any unresolved site row remains without a reviewed client decision.",
         "- Any unmapped client status remains without a reviewed V2 status.",
-        "- Any duplicate Site ID group lacks one clear keep/skip/merge decision per row.",
-        "- Any defaulted site status remains unreviewed.",
+        "- Any duplicate Site ID group lacks one clear keep/skip/needs_source_fix decision per row.",
+        "- Any defaulted site status remains without an approved manual_status.",
         "- Any private export, generated review CSV, validation report, environment file, or local DB file appears staged in git.",
         "",
         "## Recommended Next Step",
@@ -1232,14 +1927,31 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--leads", type=Path)
     parser.add_argument("--orders", type=Path)
     parser.add_argument("--sites", type=Path)
-    parser.add_argument("--client-limit", "--max-clients", dest="client_limit", type=int, default=TINY_CLIENT_LIMIT)
-    parser.add_argument("--site-limit", "--max-sites", dest="site_limit", type=int, default=TINY_SITE_LIMIT)
-    parser.add_argument("--clients-output", type=Path, default=private_dir / "clients_tiny_sample.csv")
-    parser.add_argument("--sites-output", type=Path, default=private_dir / "sites_tiny_sample.csv")
+    parser.add_argument("--client-limit", dest="client_limit", type=int)
+    parser.add_argument("--site-limit", dest="site_limit", type=int)
+    parser.add_argument("--max-clients", dest="max_clients", type=int)
+    parser.add_argument("--max-sites", dest="max_sites", type=int)
+    parser.add_argument("--clients-output", "--output-clients", dest="clients_output", type=Path)
+    parser.add_argument("--sites-output", "--output-sites", dest="sites_output", type=Path)
     parser.add_argument(
         "--report-output",
         type=Path,
         default=repo_root / "import_validation_reports" / "monday-mapping-review.md",
+    )
+    parser.add_argument(
+        "--apply-reviewed-mappings",
+        action="store_true",
+        help="Apply Bryce-approved review CSV decisions to create a private reviewed validation sample.",
+    )
+    parser.add_argument(
+        "--review-pack-dir",
+        type=Path,
+        default=repo_root / "import_validation_reports" / "monday_review_pack",
+    )
+    parser.add_argument(
+        "--reviewed-report-dir",
+        type=Path,
+        default=repo_root / "import_validation_reports" / "reviewed_sample",
     )
     parser.add_argument(
         "--write-review-pack",
@@ -1271,6 +1983,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    repo_root = _repo_root()
+    private_dir = repo_root / "docs" / "import_templates" / "v2" / "private"
     export_dir = args.export_dir
     contacts_path = args.contacts or _default_export_path(export_dir, "contacts")
     leads_path = args.leads or _default_export_path(export_dir, "leads")
@@ -1281,6 +1995,51 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Missing Monday export file: {path}", file=sys.stderr)
             return 2
 
+    if args.apply_reviewed_mappings:
+        clients_output = args.clients_output or private_dir / "clients_reviewed_sample.csv"
+        sites_output = args.sites_output or private_dir / "sites_reviewed_sample.csv"
+        reviewed_max_clients = args.max_clients if args.max_clients is not None else args.client_limit
+        reviewed_max_sites = args.max_sites if args.max_sites is not None else args.site_limit
+        try:
+            summary = prepare_reviewed_sample(
+                contacts_path=contacts_path,
+                leads_path=leads_path,
+                orders_path=orders_path,
+                sites_path=sites_path,
+                clients_template_path=args.clients_template,
+                sites_template_path=args.sites_template,
+                review_pack_dir=args.review_pack_dir,
+                clients_output_path=clients_output,
+                sites_output_path=sites_output,
+                report_dir=args.reviewed_report_dir,
+                max_clients=reviewed_max_clients,
+                max_sites=reviewed_max_sites,
+            )
+        except ReviewedMappingError as error:
+            print(f"NOT READY: {error}", file=sys.stderr)
+            print("Safety: no database writes, no imports, no provider calls.", file=sys.stderr)
+            return 2
+
+        print("Applied reviewed Monday mappings for validation sample only.")
+        print(f"  Clients rows: {summary.clients_written}")
+        print(f"  Sites rows:   {summary.sites_written}")
+        print(f"  Approved unresolved site rows: {summary.approved_unresolved_sites}")
+        print(f"  Approved status default rows:  {summary.approved_status_defaults}")
+        print(f"  Duplicate rows kept:           {summary.kept_duplicate_sites}")
+        print(f"  Clients CSV:  {summary.clients_path}")
+        print(f"  Sites CSV:    {summary.sites_path}")
+        print(f"  Reports:      {summary.report_dir}")
+        print(f"  Validation:   {'READY' if summary.validation_ready else 'NOT READY'}")
+        print("Safety: no database writes, no imports, no provider calls.")
+        return 0 if summary.validation_ready else 1
+
+    client_limit = args.client_limit if args.client_limit is not None else args.max_clients
+    site_limit = args.site_limit if args.site_limit is not None else args.max_sites
+    client_limit = client_limit if client_limit is not None else TINY_CLIENT_LIMIT
+    site_limit = site_limit if site_limit is not None else TINY_SITE_LIMIT
+    clients_output = args.clients_output or private_dir / "clients_tiny_sample.csv"
+    sites_output = args.sites_output or private_dir / "sites_tiny_sample.csv"
+
     summary = prepare_tiny_sample(
         contacts_path=contacts_path,
         leads_path=leads_path,
@@ -1288,13 +2047,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         sites_path=sites_path,
         clients_template_path=args.clients_template,
         sites_template_path=args.sites_template,
-        clients_output_path=args.clients_output,
-        sites_output_path=args.sites_output,
+        clients_output_path=clients_output,
+        sites_output_path=sites_output,
         report_path=args.report_output,
-        max_clients=args.client_limit,
-        max_sites=args.site_limit,
+        max_clients=client_limit,
+        max_sites=site_limit,
         sample_label="tiny"
-        if args.client_limit <= TINY_CLIENT_LIMIT and args.site_limit <= TINY_SITE_LIMIT
+        if client_limit <= TINY_CLIENT_LIMIT and site_limit <= TINY_SITE_LIMIT
         else "medium",
     )
     review_summary = None
@@ -1305,8 +2064,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             orders_path=orders_path,
             sites_path=sites_path,
             output_dir=args.review_output_dir,
-            max_clients=args.client_limit,
-            max_sites=args.site_limit,
+            max_clients=client_limit,
+            max_sites=site_limit,
             max_review_rows=args.max_review_rows,
         )
     print("Prepared Monday sample for validation only.")
