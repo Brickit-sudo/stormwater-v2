@@ -135,8 +135,8 @@ if (-not (Test-Path -LiteralPath $outputMd)) {
 
 $report = Get-Content -Raw -LiteralPath $outputJson | ConvertFrom-Json
 $totals = $report.totals
-$stopConditions = As-Array $report.stop_conditions
-$unresolvedSummary = As-Array $report.unresolved_reference_summary
+$stopConditions = @(As-Array $report.stop_conditions)
+$unresolvedSummary = @(As-Array $report.unresolved_reference_summary)
 
 Write-Host ""
 Write-Host "V2 tiny Clients/Sites sample validation"
@@ -179,4 +179,3 @@ if ($OpenReport) {
 }
 
 exit $validatorExitCode
-
